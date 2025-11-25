@@ -224,7 +224,7 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
         public PlayerSkeleton Skeleton { get; protected set; }
         protected int _verticesCount;
         private bool _skeletonErrorLogged;
-        private Vector3 _cachedPosition; // Fallback position cache
+        protected Vector3 _cachedPosition; // Fallback position cache
 
         /// <summary>
         /// TRUE if critical memory reads (position/rotation) have failed.
@@ -832,15 +832,18 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
 
         #region Interfaces
 
-        public virtual Vector3 Position
+        public virtual ref readonly Vector3 Position
         {
             get
             {
                 var skeletonPos = SkeletonRoot.Position;
                 // Use skeleton position if valid, otherwise fall back to cached position
                 if (skeletonPos != Vector3.Zero && !float.IsNaN(skeletonPos.X) && !float.IsInfinity(skeletonPos.X))
-                    return skeletonPos;
-                return _cachedPosition;
+                {
+                    _cachedPosition = skeletonPos; // Update cache
+                    return ref SkeletonRoot.Position;
+                }
+                return ref _cachedPosition;
             }
         }
         public Vector2 MouseoverPosition { get; set; }
