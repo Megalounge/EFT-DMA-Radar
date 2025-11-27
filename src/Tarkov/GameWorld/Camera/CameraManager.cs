@@ -382,22 +382,46 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Camera
         {
             try
             {
-                if (localPlayer is null || !OpticCameraActive)
+                if (localPlayer is null)
+                {
+                    DebugLogger.LogDebug("CheckIfScoped: localPlayer is null");
                     return false;
+                }
+
+                if (!OpticCameraActive)
+                {
+                    DebugLogger.LogDebug($"CheckIfScoped: OpticCameraActive is false (OpticCamera=0x{OpticCamera:X})");
+                    return false;
+                }
 
                 var opticsPtr = Memory.ReadPtr(localPlayer.PWA + Offsets.ProceduralWeaponAnimation._optics);
+                DebugLogger.LogDebug($"CheckIfScoped: opticsPtr=0x{opticsPtr:X}");
+
                 using var optics = UnityList<VmmPointer>.Create(opticsPtr, true);
+                DebugLogger.LogDebug($"CheckIfScoped: optics.Count={optics.Count}");
 
                 if (optics.Count > 0)
                 {
                     var pSightComponent = Memory.ReadPtr(optics[0] + Offsets.SightNBone.Mod);
+                    DebugLogger.LogDebug($"CheckIfScoped: pSightComponent=0x{pSightComponent:X}");
+
                     var sightComponent = Memory.ReadValue<SightComponent>(pSightComponent);
+                    DebugLogger.LogDebug($"CheckIfScoped: ScopeZoomValue={sightComponent.ScopeZoomValue:F2}");
 
                     if (sightComponent.ScopeZoomValue != 0f)
-                        return sightComponent.ScopeZoomValue > 1f;
+                    {
+                        bool result = sightComponent.ScopeZoomValue > 1f;
+                        DebugLogger.LogDebug($"CheckIfScoped: Using ScopeZoomValue, result={result}");
+                        return result;
+                    }
 
-                    return sightComponent.GetZoomLevel() > 1f;
+                    float zoomLevel = sightComponent.GetZoomLevel();
+                    bool zoomResult = zoomLevel > 1f;
+                    DebugLogger.LogDebug($"CheckIfScoped: GetZoomLevel()={zoomLevel:F2}, result={zoomResult}");
+                    return zoomResult;
                 }
+
+                DebugLogger.LogDebug("CheckIfScoped: No optics found, returning false");
                 return false;
             }
             catch (Exception ex)
