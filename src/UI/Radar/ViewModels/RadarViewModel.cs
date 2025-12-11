@@ -257,7 +257,7 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
                 SetMapName();
                 /// Check for map switch
                 string mapID = MapID; // Cache ref
-                if (!mapID.Equals(EftMapManager.Map?.ID, StringComparison.OrdinalIgnoreCase)) // Map changed
+                if (mapID != null && !string.Equals(mapID, EftMapManager.Map?.ID, StringComparison.OrdinalIgnoreCase)) // Map changed
                 {
                     EftMapManager.LoadMap(mapID);
                 }
