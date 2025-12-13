@@ -1,7 +1,7 @@
-﻿/*
+/*
  * Lone EFT DMA Radar
  * Brought to you by Lone (Lone DMA)
- * 
+ *
 MIT License
 
 Copyright (c) 2025 Lone DMA
@@ -26,49 +26,36 @@ SOFTWARE.
  *
 */
 
-using LoneEftDmaRadar.Tarkov.GameWorld.Player.Helpers;
-using VmmSharpEx.Scatter;
+using SkiaSharp;
 
-namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
+namespace LoneEftDmaRadar.UI.Skia
 {
     /// <summary>
-    /// BTR Bot Operator.
+    /// Custom font manager for creating dynamic fonts based on configuration
     /// </summary>
-    public sealed class BtrPlayer : ObservedPlayer
+    internal static class CustomFontManager
     {
-        private readonly ulong _btrView;
-        private readonly ulong _posAddr;
-        private Vector3 _position;
-
-        public override ref readonly Vector3 Position
+        /// <summary>
+        /// Creates a font for radar ESP widgets (loot height indicators, etc)
+        /// </summary>
+        /// <param name="fontSize">The font size to use</param>
+        /// <returns>A configured SKFont instance</returns>
+        public static SKFont CreateRadarWidgetFont(float fontSize)
         {
-            get => ref _position;
-        }
-        public override string Name
-        {
-            get => "BTR";
-            set { }
-        }
-        public BtrPlayer(ulong btrView, ulong playerBase) : base(playerBase)
-        {
-            _btrView = btrView;
-            _posAddr = _btrView + Offsets.BTRView._previousPosition;
-            Type = PlayerType.AIRaider;
+            return new SKFont(CustomFonts.NeoSansStdRegular, fontSize)
+            {
+                Subpixel = true,
+                Edging = SKFontEdging.SubpixelAntialias
+            };
         }
 
         /// <summary>
-        /// Set the position of the BTR.
-        /// Give this function it's own unique Index.
+        /// Gets the current radar widget font based on app configuration
         /// </summary>
-        /// <param name="index">Scatter read index to read off of.</param>
-        public override void OnRealtimeLoop(VmmScatter scatter)
+        /// <returns>A configured SKFont instance with current config settings</returns>
+        public static SKFont GetCurrentRadarWidgetFont()
         {
-            scatter.PrepareReadValue<Vector3>(_posAddr);
-            scatter.Completed += (sender, s) =>
-            {
-                if (s.ReadValue<Vector3>(_posAddr, out var position))
-                    _position = position;
-            };
+            return CreateRadarWidgetFont(App.Config.UI.RadarWidgetFontSize);
         }
     }
 }

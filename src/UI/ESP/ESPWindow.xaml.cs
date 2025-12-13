@@ -22,13 +22,31 @@ using System.Windows.Forms.Integration;
 using WinForms = System.Windows.Forms;
 using SkiaSharp;
 using DxColor = SharpDX.Mathematics.Interop.RawColorBGRA;
-using CameraManagerNew = LoneEftDmaRadar.Tarkov.GameWorld.Camera.CameraManager;
+using LoneEftDmaRadar.Tarkov.GameWorld.Camera;
+using LoneEftDmaRadar.UI.Radar;
+using LoneEftDmaRadar.UI.Radar.Maps;
+using LoneEftDmaRadar.UI.Skia;
 
 namespace LoneEftDmaRadar.UI.ESP
 {
     public partial class ESPWindow : Window
     {
         #region Fields/Properties
+
+        private const int MINIRADAR_SIZE = 256;
+        private string _lastMapId;
+        private MiniRadarParams _miniRadarParams;
+
+        private struct MiniRadarParams
+        {
+            public float Scale;
+            public float OffsetX;
+            public float OffsetY;
+            public float ScreenX;
+            public float ScreenY;
+            public float DrawSize;
+            public bool IsValid;
+        }
 
         public static bool ShowESP { get; set; } = true;
         private bool _dxInitFailed;
@@ -260,12 +278,10 @@ namespace LoneEftDmaRadar.UI.ESP
             // Clear with black background (transparent for fuser)
             ctx.Clear(new DxColor(0, 0, 0, 255));
 
-            try
-            {
                 // Detect raid state changes and reset camera/state when leaving raid
                 if (_lastInRaidState && !InRaid)
                 {
-                    CameraManagerNew.Reset();
+                    CameraManager.Reset();
                     DebugLogger.LogInfo("ESP: Detected raid end - reset all state");
                 }
                 _lastInRaidState = InRaid;
@@ -347,14 +363,16 @@ namespace LoneEftDmaRadar.UI.ESP
                         }
 
                         DrawDeviceAimbotDebugOverlay(ctx, screenWidth, screenHeight);
+
+                        if (App.Config.UI.MiniRadar.Enabled)
+                        {
+                            DrawMiniRadar(ctx, localPlayer, allPlayers, screenWidth, screenHeight);
+                        }
+
                         DrawFPS(ctx, screenWidth, screenHeight);
                     }
                 }
-            }
-            catch (System.Exception ex)
-            {
-                DebugLogger.LogDebug($"ESP RENDER ERROR: {ex}");
-            }
+
         }
 
         private void DrawLoot(Dx9RenderContext ctx, float screenWidth, float screenHeight, LocalPlayer localPlayer)
@@ -692,6 +710,320 @@ namespace LoneEftDmaRadar.UI.ESP
             }
         }
 
+        private void DrawMiniRadar(Dx9RenderContext ctx, LocalPlayer localPlayer, IEnumerable<AbstractPlayer> allPlayers, float screenWidth, float screenHeight)
+        {
+             try
+             {
+                 var cfg = App.Config.UI.MiniRadar;
+
+                 if (!cfg.Enabled) return;
+
+                 // Ensure Map Manager is synced with Game Memory
+                 var gameMapId = Memory.Game?.MapID;
+                 if (!string.IsNullOrEmpty(gameMapId) &&
+                     !string.Equals(gameMapId, EftMapManager.Map?.ID, StringComparison.OrdinalIgnoreCase))
+                 {
+                     DebugLogger.LogInfo($"[MiniRadar] Map Mismatch detected! Game: '{gameMapId}' vs Manager: '{EftMapManager.Map?.ID}'. Loading correct map...");
+                     EftMapManager.LoadMap(gameMapId);
+                 }
+
+                 var map = EftMapManager.Map;
+
+                 if (map is null) return;
+
+                 // Check if map changed or size changed
+                 if (_lastMapId != map.ID || _lastMiniRadarSize != cfg.Size)
+                 {
+                     UpdateMiniRadarTexture(map, cfg.Size);
+                 }
+
+                 if (!_miniRadarParams.IsValid)
+                     return;
+
+                 // Define screen position
+                 // If ScreenX is < 0, use auto-position (Top Right)
+                 float radarScreenX = cfg.ScreenX < 0 
+                     ? screenWidth - cfg.Size - 20f 
+                     : cfg.ScreenX;
+                 
+                 float radarScreenY = cfg.ScreenY;
+                 
+                 // Update internal screen params (Size comes from config now)
+                 _miniRadarParams.DrawSize = cfg.Size;
+                 _miniRadarParams.ScreenX = radarScreenX;
+                 _miniRadarParams.ScreenY = radarScreenY;
+
+                 // Draw Background Texture
+                 // Draw Map Texture (No background, no border)
+                 var destRect = new RectangleF(radarScreenX, radarScreenY, cfg.Size, cfg.Size);
+                 ctx.DrawMapTexture(destRect, 1.0f);
+
+                 // Draw Exits (if enabled)
+                 if (Exits is not null && cfg.ShowExits && App.Config.UI.EspExfils)
+                 {
+                     DrawMiniRadarExits(ctx, map);
+                 }
+
+                // Draw Loot (if enabled)
+                if (App.Config.Loot.Enabled && cfg.ShowLoot)
+                {
+                    DrawMiniRadarLoot(ctx, map);
+                }
+                
+                // Draw Containers (if enabled)
+                if (App.Config.Loot.Enabled && cfg.ShowContainers)
+                {
+                    DrawMiniRadarContainers(ctx, map);
+                }
+
+                // Draw Explosives (if enabled)
+                if (Explosives is not null && cfg.ShowGrenades && (App.Config.UI.EspTripwires || App.Config.UI.EspGrenades))
+                {
+                    DrawMiniRadarExplosives(ctx, map);
+                }
+
+                 // Draw Local Player
+                 DrawMiniRadarDot(ctx, localPlayer.Position, localPlayer.Rotation, map, SKColors.Cyan, 4f, true);
+
+                 // Draw Other Players
+                 if (allPlayers != null && cfg.ShowPlayers)
+                 {
+                     foreach (var player in allPlayers)
+                     {
+                         if (player == localPlayer || !player.IsAlive || !player.IsActive) continue;
+                         
+                         var color = GetPlayerColor(player).Color;
+                         
+                         DrawMiniRadarDot(ctx, player.Position, player.Rotation, map, color, 3f, true);
+                     }
+                 }
+                 
+                 // Draw Border Outline
+                 ctx.DrawRect(destRect, new DxColor(100, 100, 100, 255), 1.0f);
+             }
+             catch
+             {
+                 // Ignore drawing errors
+             }
+        }
+
+        private void DrawMiniRadarExplosives(Dx9RenderContext ctx, IEftMap map)
+        {
+            if (Explosives is null) return;
+
+            bool showTrip = App.Config.UI.EspTripwires;
+            bool showNade = App.Config.UI.EspGrenades;
+            var tripColor = ColorFromHex(App.Config.UI.EspColorTripwire);
+            var nadeColor = ColorFromHex(App.Config.UI.EspColorGrenade);
+
+            foreach (var explosive in Explosives)
+            {
+                if (explosive is null || explosive.Position == Vector3.Zero) continue;
+                
+                if (explosive is Tripwire trip && trip.IsActive && showTrip)
+                {
+                    DrawMiniRadarDot(ctx, trip.Position, map, tripColor, 2f);
+                }
+                else if (explosive is Grenade && showNade)
+                {
+                    DrawMiniRadarDot(ctx, explosive.Position, map, nadeColor, 2f);
+                }
+            }
+        }
+
+        private void DrawMiniRadarContainers(Dx9RenderContext ctx, IEftMap map)
+        {
+             if (!App.Config.Containers.Enabled) return;
+             var containers = Memory.Game?.Loot?.StaticContainers;
+             if (containers is null) return;
+             
+             bool selectAll = App.Config.Containers.SelectAll;
+             var selected = App.Config.Containers.Selected;
+             bool hideSearched = App.Config.Containers.HideSearched;
+             var color = ColorFromHex(App.Config.UI.EspColorContainers);
+             
+             foreach (var c in containers)
+             {
+                  if (c.Position == Vector3.Zero) continue;
+                  var id = c.ID ?? "UNKNOWN";
+                  if (!(selectAll || selected.ContainsKey(id))) continue;
+                  if (hideSearched && c.Searched) continue;
+                  
+                  DrawMiniRadarDot(ctx, c.Position, map, color, 1.5f);
+             }
+        }
+
+        private void DrawMiniRadarLoot(Dx9RenderContext ctx, IEftMap map)
+        {
+            var lootItems = Memory.Game?.Loot?.FilteredLoot;
+            if (lootItems is null) return;
+
+            foreach (var item in lootItems)
+            {
+                // Basic filtering consistent with DrawLoot
+                 bool isCorpse = item is LootCorpse;
+                 bool isQuest = item.IsQuestItem;
+                 if (isQuest && !App.Config.UI.EspQuestLoot) continue;
+                 if (isCorpse && !App.Config.UI.EspCorpses) continue;
+
+                 var color = isQuest ? SKColors.YellowGreen :
+                             isCorpse ? SKColors.Gray :
+                             item.Important ? SKColors.Turquoise : SKColors.White;
+
+                 DrawMiniRadarDot(ctx, item.Position, map, color, 1.5f);
+            }
+        }
+
+        private void DrawMiniRadarExits(Dx9RenderContext ctx, IEftMap map)
+        {
+            if (Exits is null) return;
+
+            foreach (var exit in Exits)
+            {
+                if (exit is Exfil exfil && (exfil.Status == Exfil.EStatus.Open || exfil.Status == Exfil.EStatus.Pending))
+                {
+                    var color = exfil.Status == Exfil.EStatus.Pending ? SKColors.Yellow : SKColors.LimeGreen;
+                    DrawMiniRadarDot(ctx, exfil.Position, map, color, 2.5f);
+                }
+            }
+        }
+
+        private void DrawMiniRadarDot(Dx9RenderContext ctx, Vector3 worldPos, IEftMap map, SKColor color, float size)
+        {
+            var unused = Vector2.Zero; // Dummy rotation
+            DrawMiniRadarDot(ctx, worldPos, unused, map, color, size, false);
+        }
+
+        private void DrawMiniRadarDot(Dx9RenderContext ctx, Vector3 worldPos, Vector2 rotation, IEftMap map, SKColor color, float size, bool drawLookDir)
+        {
+             // Transform
+             var mapPos = worldPos.ToMapPos(map.Config);
+             
+             // Use pre-calculated params from UpdateMiniRadarTexture (already scaled to size)
+             float miniX = mapPos.X * _miniRadarParams.Scale + _miniRadarParams.OffsetX;
+             float miniY = mapPos.Y * _miniRadarParams.Scale + _miniRadarParams.OffsetY;
+
+             // Screen relative
+             float screenX = _miniRadarParams.ScreenX + miniX;
+             float screenY = _miniRadarParams.ScreenY + miniY;
+
+             // Clip to radar bounds (optional, but good)
+             if (screenX < _miniRadarParams.ScreenX || screenX > _miniRadarParams.ScreenX + _miniRadarParams.DrawSize ||
+                 screenY < _miniRadarParams.ScreenY || screenY > _miniRadarParams.ScreenY + _miniRadarParams.DrawSize)
+                 return;
+
+             if (drawLookDir)
+             {
+                 DrawMiniRadarLookDirection(ctx, screenX, screenY, rotation, color);
+             }
+
+             ctx.DrawCircle(new SharpDX.Mathematics.Interop.RawVector2(screenX, screenY), size, ToColor(color), true);
+        }
+
+        private void DrawMiniRadarLookDirection(Dx9RenderContext ctx, float screenX, float screenY, Vector2 rotation, SKColor color)
+        {
+             float rX = rotation.X; // Yaw
+             float rad = (rX - 90) * (MathF.PI / 180f);
+             float cos = MathF.Cos(rad);
+             float sin = MathF.Sin(rad);
+             
+             float len = 10f; // Look length
+             
+             float endX = screenX + cos * len;
+             float endY = screenY + sin * len;
+
+             ctx.DrawLine(new RawVector2(screenX, screenY), new RawVector2(endX, endY), ToColor(color), 1f);
+        }
+
+        private int _lastMiniRadarSize = -1;
+        private DateTime _lastMiniRadarErrorTime = DateTime.MinValue;
+
+        private void UpdateMiniRadarTexture(IEftMap map, int size)
+        {
+             try 
+             {
+                 // Get Map Bounds
+                 var bounds = map.GetBounds();
+                 if (bounds.IsEmpty) 
+                 {
+                     if ((DateTime.Now - _lastMiniRadarErrorTime).TotalSeconds > 5)
+                     {
+                         DebugLogger.LogDebug($"[MiniRadar] Map bounds empty for '{map.ID}'. Retrying...");
+                         _lastMiniRadarErrorTime = DateTime.Now;
+                     }
+                     return;
+                 }
+
+                 // We render to a higher resolution texture to ensure map lines are preserved during scaling
+                 // Then we let DX9 overlay handle the downsampling to screen size
+                 const int TEXTURE_SIZE = 512; // Moderate res for quality/perf balance
+                 
+                 float mapW = bounds.Width;
+                 float mapH = bounds.Height;
+                 
+                 if (mapW <= 0 || mapH <= 0) return;
+
+                 // The scale used for RENDERING the map to the texture
+                 // We want to fit the map into TEXTURE_SIZE (512)
+                 float renderScale = Math.Min((float)TEXTURE_SIZE / mapW, (float)TEXTURE_SIZE / mapH);
+
+                 // Determine offsets to center the map in the TEXTURE
+                 float renderOffsetX = (TEXTURE_SIZE - (mapW * renderScale)) / 2f;
+                 float renderOffsetY = (TEXTURE_SIZE - (mapH * renderScale)) / 2f;
+
+                 float screenScale = renderScale * ((float)size / TEXTURE_SIZE);
+                 float screenOffsetX = renderOffsetX * ((float)size / TEXTURE_SIZE);
+                 float screenOffsetY = renderOffsetY * ((float)size / TEXTURE_SIZE);
+                 
+                 // Render to Bitmap
+                 using var bitmap = new SKBitmap(TEXTURE_SIZE, TEXTURE_SIZE, SKColorType.Bgra8888, SKAlphaType.Premul);
+                 using var canvas = new SKCanvas(bitmap);
+                 
+                 // Use Transparent background so the underlying FilledRect color shows through
+                 canvas.Clear(SKColors.Transparent);
+
+                 // Render map into the 512x512 canvas
+                 try
+                 {
+                     map.RenderThumbnail(canvas, TEXTURE_SIZE, TEXTURE_SIZE);
+                 }
+                 catch (Exception ex)
+                 {
+                     DebugLogger.LogError($"[ESPWindow] Failed to render mini-radar thumbnail: {ex.Message}");
+                     return;
+                 }
+                 
+                 // Note: Debug Red X removed to clean up view.
+
+                 var bytes = bitmap.Bytes; 
+                 // Request texture update
+                 _dxOverlay.RequestMapTextureUpdate(TEXTURE_SIZE, TEXTURE_SIZE, bytes);
+                 
+                 // Set ID/Params only after success to ensure we retry on failure
+                 // This ensures that dots are only drawn if the map is valid and loaded
+                 _miniRadarParams = new MiniRadarParams
+                 {
+                     Scale = screenScale,
+                     OffsetX = screenOffsetX,
+                     OffsetY = screenOffsetY,
+                     DrawSize = size,
+                     IsValid = true
+                 };
+                 
+                 _lastMapId = map.ID;
+                 _lastMiniRadarSize = size;
+                 DebugLogger.LogInfo($"[MiniRadar] Texture updated for '{map.ID}' @ {size}px (Scale: {screenScale:F3})");
+             }
+             catch (Exception ex)
+             {
+                 if ((DateTime.Now - _lastMiniRadarErrorTime).TotalSeconds > 5)
+                 {
+                     DebugLogger.LogDebug($"[MiniRadar] Update failed: {ex.Message}");
+                     _lastMiniRadarErrorTime = DateTime.Now;
+                 }
+             }
+        }
+
         private void DrawSkeleton(Dx9RenderContext ctx, AbstractPlayer player, float w, float h, DxColor color, float thickness)
         {
             foreach (var (from, to) in _boneConnections)
@@ -942,7 +1274,10 @@ namespace LoneEftDmaRadar.UI.ESP
             if (!cfg.ShowFovCircle || cfg.FOV <= 0)
                 return;
 
-            float radius = Math.Clamp(cfg.FOV, 5f, Math.Min(width, height));
+            float limit = Math.Min(width, height);
+            if (limit < 6f) return;
+
+            float radius = Math.Clamp(cfg.FOV, 5f, limit);
             bool engaged = MemDMA.DeviceAimbot?.IsEngaged == true;
 
             // Parse color from config using SKColor.Parse (supports #AARRGGBB and #RRGGBB formats)
@@ -1109,7 +1444,9 @@ namespace LoneEftDmaRadar.UI.ESP
         {
             _lastInRaidState = false;
             _espGroupPaints.Clear();
-            CameraManagerNew.Reset();
+            _lastMapId = null; // Reset map ID to force update next raid
+            _miniRadarParams = default; // Clear render params
+            CameraManager.Reset();
             RefreshESP();
             DebugLogger.LogInfo("ESP: RaidStopped -> state reset");
         }
@@ -1135,7 +1472,7 @@ namespace LoneEftDmaRadar.UI.ESP
 
         private bool WorldToScreen2(in Vector3 world, out SKPoint scr, float screenWidth, float screenHeight)
         {
-            return CameraManagerNew.WorldToScreen(in world, out scr, true, true);
+            return CameraManager.WorldToScreen(in world, out scr, true, true);
         }
 
         private bool TryProject(in Vector3 world, float w, float h, out SKPoint screen)

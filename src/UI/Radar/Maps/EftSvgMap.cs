@@ -27,6 +27,7 @@ SOFTWARE.
 */
 
 using Collections.Pooled;
+using LoneEftDmaRadar.UI.Misc;
 using LoneEftDmaRadar.UI.Skia;
 using SkiaSharp.Views.WPF;
 using Svg.Skia;
@@ -49,9 +50,9 @@ namespace LoneEftDmaRadar.UI.Radar.Maps
         /// <summary>Tracks the last valid zoom level to prevent zoom value drift at boundaries.</summary>
         private static int _lastValidZoom = 100;
         /// <summary>Redundant horizontal space to add around map boundaries.</summary>
-        private const float HORIZONTAL_PADDING = 100f;
+        private const float HORIZONTAL_PADDING = 25f;
         /// <summary>Redundant vertical space to add around map boundaries.</summary>
-        private const float VERTICAL_PADDING = 35f;
+        private const float VERTICAL_PADDING = 100f;
 
         /// <summary>
         /// Construct a new vector map by loading each SVG layer from the supplied zip archive.
@@ -139,7 +140,19 @@ namespace LoneEftDmaRadar.UI.Radar.Maps
 
                 var paint = dim ?
                     SKPaints.PaintBitmapAlpha : SKPaints.PaintBitmap;
-                canvas.DrawPicture(layer.Picture, paint);
+
+                var picture = layer.Picture;
+                if (picture != null && !picture.Handle.Equals(IntPtr.Zero))
+                {
+                    try
+                    {
+                        canvas.DrawPicture(picture, paint);
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugLogger.LogError($"[EftSvgMap] Failed to draw layer: {ex.Message}");
+                    }
+                }
             }
 
             canvas.Restore();
@@ -207,6 +220,73 @@ namespace LoneEftDmaRadar.UI.Radar.Maps
                 XScale = (float)size.Width / bounds.Width,
                 YScale = (float)size.Height / bounds.Height
             };
+        }
+
+        public void RenderThumbnail(SKCanvas canvas, int width, int height)
+        {
+            if (_layers.Length == 0) return;
+
+            var baseLayer = _layers[0];
+            float mapW = baseLayer.RawWidth * Config.SvgScale;
+            float mapH = baseLayer.RawHeight * Config.SvgScale;
+
+            if (mapW <= 0 || mapH <= 0) return;
+
+            // Compute uniform scale to fit
+            float scaleX = width / mapW;
+            float scaleY = height / mapH;
+            float scale = Math.Min(scaleX, scaleY);
+
+            // Center
+            float scaledW = mapW * scale;
+            float scaledH = mapH * scale;
+            float dx = (width - scaledW) / 2f;
+            float dy = (height - scaledH) / 2f;
+
+            canvas.Save();
+            canvas.Translate(dx, dy);
+            canvas.Scale(scale, scale);
+            canvas.Scale(Config.SvgScale, Config.SvgScale);
+
+            // Create paint with color inversion filter for dark mode visibility
+            // Create paint with color inversion filter for dark mode visibility (configurable)
+            using var paint = new SKPaint();
+            if (App.Config.UI.MiniRadar.InvertColors)
+            {
+                paint.ColorFilter = SKColorFilter.CreateColorMatrix(new float[]
+                {
+                    -1,  0,  0, 0, 1, // R = 1 - R
+                     0, -1,  0, 0, 1, // G = 1 - G
+                     0,  0, -1, 0, 1, // B = 1 - B
+                     0,  0,  0, 1, 0  // A = A
+                });
+            }
+
+            // Draw all layers (bottom to top) to show full context
+            foreach (var layer in _layers)
+            {
+                var picture = layer.Picture;
+                if (picture != null && !picture.Handle.Equals(IntPtr.Zero))
+                {
+                    try
+                    {
+                        canvas.DrawPicture(picture, paint);
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugLogger.LogError($"[EftSvgMap] Failed to draw thumbnail layer: {ex.Message}");
+                    }
+                }
+            }
+
+            canvas.Restore();
+        }
+
+        public SKRect GetBounds()
+        {
+            if (_layers.Length == 0) return SKRect.Empty;
+            var baseLayer = _layers[0];
+            return new SKRect(0, 0, baseLayer.RawWidth * Config.SvgScale, baseLayer.RawHeight * Config.SvgScale);
         }
 
         /// <summary>
@@ -333,7 +413,7 @@ namespace LoneEftDmaRadar.UI.Radar.Maps
             /// <summary>
             /// The SKPicture representing this layer's vector content.
             /// </summary>
-            public SKPicture Picture => _svg.Picture!;
+            public SKPicture? Picture => _svg.Picture;
 
             /// <summary>
             /// Create a vector layer from a loaded SKSvg and its configuration.

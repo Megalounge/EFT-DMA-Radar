@@ -44,6 +44,13 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
 {
     public sealed class RadarViewModel
     {
+        #region Events
+        /// <summary>
+        /// Fired when the follow target changes
+        /// </summary>
+        public event Action<string> OnFollowTargetChanged;
+        #endregion
+
         #region Static Interface
 
         /// <summary>
@@ -265,7 +272,11 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
                 if (inRaid && LocalPlayer is LocalPlayer localPlayer) // LocalPlayer is in a raid -> Begin Drawing...
                 {
                     var map = EftMapManager.Map; // Cache ref
-                    ArgumentNullException.ThrowIfNull(map, nameof(map));
+                    if (map == null)
+                    {
+                        DebugLogger.LogDebug("[RadarViewModel] Map is null after loading, skipping render frame");
+                        return; // dont crash pls
+                    }
                     var closestToMouse = _mouseOverItem; // cache ref
                     // Get target location (either local player or teammate)
                     Vector3 targetPos;
@@ -309,7 +320,15 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
                         Bottom = info.Rect.Bottom
                     };
                     // Draw Map
-                    map.Draw(canvas, localPlayer.Position.Y, mapParams.Bounds, mapCanvasBounds);
+                    try
+                    {
+                        map.Draw(canvas, localPlayer.Position.Y, mapParams.Bounds, mapCanvasBounds);
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugLogger.LogError($"[RadarViewModel] Failed to draw map: {ex.Message}");
+                        return; // dont crash pls
+                    }
                     // Draw other players
                     var allPlayers = AllPlayers?
                         .Where(x => !x.HasExfild); // Skip exfil'd players
@@ -603,38 +622,35 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
                 p != LocalPlayer &&
                 !p.HasExfild &&
                 p.IsAlive &&
-                p.IsHumanHostileActive &&
+                p.IsFriendlyActive &&
                 p.GroupID == LocalPlayer?.GroupID &&
                 p.GroupID != -1
             ).ToList();
 
             if (teammates == null || teammates.Count == 0)
             {
-                // No teammates, follow self
                 _followTarget = null;
                 return;
             }
 
             if (_followTarget == null)
             {
-                // Currently following self, switch to first teammate
                 _followTarget = teammates[0];
             }
             else
             {
-                // Find current target in the list and move to next
                 int currentIndex = teammates.IndexOf(_followTarget);
                 if (currentIndex >= 0 && currentIndex < teammates.Count - 1)
                 {
-                    // Switch to next teammate
                     _followTarget = teammates[currentIndex + 1];
                 }
                 else
                 {
-                    // Back to self
                     _followTarget = null;
                 }
             }
+
+            OnFollowTargetChanged?.Invoke(GetFollowTargetInfo());
         }
 
         /// <summary>
@@ -643,13 +659,13 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
         /// <param name="teammate">Teammate to follow, or null to follow self.</param>
         public void SetFollowTarget(AbstractPlayer teammate)
         {
-            // Validate that this is a teammate or null
             if (teammate == null ||
-                (teammate.IsHumanHostileActive &&
+                (teammate.IsFriendlyActive &&
                  teammate.GroupID == LocalPlayer?.GroupID &&
                  teammate.GroupID != -1))
             {
                 _followTarget = teammate;
+                OnFollowTargetChanged?.Invoke(GetFollowTargetInfo());
             }
         }
 
@@ -660,9 +676,9 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
         public string GetFollowTargetInfo()
         {
             if (_followTarget == null)
-                return "Following: Self";
+                return "Following: LocalPlayer";
 
-            return $"Following: {_followTarget.Name ?? "Teammate"} (Group {_followTarget.GroupID})";
+            return $"Following: {_followTarget.Name ?? "Teammate"}";
         }
 
         #endregion
