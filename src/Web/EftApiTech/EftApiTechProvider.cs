@@ -74,7 +74,7 @@ namespace LoneEftDmaRadar.Web.EftApiTech
                 options.CircuitBreaker.StateProvider = _circuitBreakerStateProvider;
                 options.CircuitBreaker.SamplingDuration = options.AttemptTimeout.Timeout * 2;
                 options.CircuitBreaker.FailureRatio = 1.0;
-                options.CircuitBreaker.MinimumThroughput = 2;
+                options.CircuitBreaker.MinimumThroughput = 3;
                 options.CircuitBreaker.BreakDuration = TimeSpan.FromMinutes(1);
             });
         }
@@ -97,7 +97,9 @@ namespace LoneEftDmaRadar.Web.EftApiTech
 
         private EftApiTechProvider() { }
 
-        public bool CanLookup(string accountId) => !_skip.ContainsKey(accountId);
+        public bool CanLookup(string accountId) => 
+            !_skip.ContainsKey(accountId) && 
+            _circuitBreakerStateProvider.CircuitState == CircuitState.Closed;
 
         public async Task<EFTProfileResponse> GetProfileAsync(string accountId, CancellationToken ct)
         {
@@ -112,15 +114,34 @@ namespace LoneEftDmaRadar.Web.EftApiTech
                     return null; // Rate limit hit
                 var client = App.HttpClientFactory.CreateClient(nameof(EftApiTechProvider));
                 using var response = await client.GetAsync($"api/profile/{accountId}", ct);
+                
+                // Handle various error responses
                 if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
                 {
+                    var content = await response.Content.ReadAsStringAsync(ct);
+                    DebugLogger.LogDebug($"[EftApiTechProvider] Auth error ({response.StatusCode}): {content}");
                     MessageBox.Show(MainWindow.Instance, $"eft-api.tech returned '{response.StatusCode}'. Please make sure your Api Key and IP Address are set correctly.", nameof(EftApiTechProvider), MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return null;
+                }
+                else if (response.StatusCode is HttpStatusCode.TooManyRequests)
+                {
+                    var content = await response.Content.ReadAsStringAsync(ct);
+                    DebugLogger.LogDebug($"[EftApiTechProvider] Rate limited (429): {content}");
+                    return null;
                 }
                 else if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotFound)
                 {
                     _skip.TryAdd(accountId, 0);
+                    DebugLogger.LogDebug($"[EftApiTechProvider] Profile not found for '{accountId}', adding to skip list");
+                    return null;
                 }
-                response.EnsureSuccessStatusCode();
+                else if (!response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync(ct);
+                    DebugLogger.LogDebug($"[EftApiTechProvider] HTTP error ({response.StatusCode}): {content}");
+                    return null;
+                }
+                
                 string json = await response.Content.ReadAsStringAsync(ct);
                 using var jsonDoc = JsonDocument.Parse(json);
                 bool success = jsonDoc.RootElement.GetProperty("success").GetBoolean();
@@ -141,7 +162,7 @@ namespace LoneEftDmaRadar.Web.EftApiTech
             }
             catch (Exception ex)
             {
-                DebugLogger.LogDebug($"[EftApiTechProvider] Failed to get profile: {ex}");
+                DebugLogger.LogDebug($"[EftApiTechProvider] Failed to get profile '{accountId}': {ex}");
                 return null;
             }
         }

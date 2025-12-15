@@ -303,26 +303,83 @@ namespace LoneEftDmaRadar.UI.Skia
                     // Scale radius with perspective (from TryProject)
                     float r = Math.Clamp(3f * App.Config.UI.UIScale * scale, 2f, 15f);
 
-                    var paint = SKPaints.PaintCorpse;
-                    _canvas.DrawCircle(screen.X, screen.Y, r, paint);
-
-                    // Get corpse name (player name or "Corpse")
-                    var corpseName = corpse.Player?.Name;
-                    var displayName = string.IsNullOrWhiteSpace(corpseName) ? "Corpse" : corpseName;
+                    // Get paint based on corpse type
+                    var (shapePaint, textColor) = GetCorpsePaints(corpse);
+                    _canvas.DrawCircle(screen.X, screen.Y, r, shapePaint);
 
                     // Scale font with perspective
                     float baseFontSize = SKFonts.EspWidgetFont.Size * scale * 0.9f;
                     float fontSize = Math.Clamp(baseFontSize, 8f, 20f);
                     using var font = new SKFont(SKFonts.EspWidgetFont.Typeface, fontSize) { Subpixel = true };
+                    
+                    // Check for important items with proper type distinction
+                    var importantItem = corpse.GetImportantItem();
+                    float textY = screen.Y + r + 1;
+                    
+                    // Draw important item label ABOVE the name if exists
+                    if (importantItem.HasItem)
+                    {
+                        // Get the appropriate color based on item type
+                        SKColor importantColor;
+                        if (importantItem.Type == CorpseImportantItemType.Wishlist)
+                        {
+                            // Wishlist items use WishlistLoot color (configurable via Color Picker)
+                            importantColor = SKPaints.TextWishlistItem.Color;
+                        }
+                        else if (!string.IsNullOrEmpty(importantItem.CustomFilterColor) && 
+                                 SKColor.TryParse(importantItem.CustomFilterColor, out var filterColor))
+                        {
+                            // Filter items use their custom color
+                            importantColor = filterColor;
+                        }
+                        else
+                        {
+                            // Fallback to ImportantLoot (ValuableLoot) color
+                            importantColor = SKPaints.TextImportantLoot.Color;
+                        }
+                        
+                        var importantPaint = new SKPaint
+                        {
+                            Color = importantColor,
+                            IsStroke = false,
+                            IsAntialias = true
+                        };
+                        _canvas.DrawText(importantItem.Label, new SKPoint(screen.X + r + 3, textY), SKTextAlign.Left, font, importantPaint);
+                        textY += fontSize + 2; // Move down for corpse name
+                    }
+                    
+                    // Draw corpse name with type
                     var textPaint = new SKPaint
                     {
-                        Color = SKPaints.PaintCorpse.Color,
+                        Color = textColor,
                         IsStroke = false,
                         IsAntialias = true
                     };
-                    _canvas.DrawText($"{displayName} D:{distance:F0}m", new SKPoint(screen.X + r + 3, screen.Y + r + 1), SKTextAlign.Left, font, textPaint);
+                    _canvas.DrawText($"{corpse.Name} D:{distance:F0}m", new SKPoint(screen.X + r + 3, textY), SKTextAlign.Left, font, textPaint);
                 }
             }
+        }
+
+        /// <summary>
+        /// Gets the appropriate paints based on the corpse's player type.
+        /// </summary>
+        private static (SKPaint shape, SKColor textColor) GetCorpsePaints(LootCorpse corpse)
+        {
+            if (corpse.Player is null)
+                return (SKPaints.PaintCorpse, SKPaints.PaintCorpse.Color);
+
+            return corpse.Player.Type switch
+            {
+                PlayerType.PMC => (SKPaints.PaintPMC, SKPaints.TextPMC.Color),
+                PlayerType.Teammate => (SKPaints.PaintTeammate, SKPaints.TextTeammate.Color),
+                PlayerType.AIBoss => (SKPaints.PaintBoss, SKPaints.TextBoss.Color),
+                PlayerType.AIRaider => (SKPaints.PaintRaider, SKPaints.TextRaider.Color),
+                PlayerType.AIScav => (SKPaints.PaintScav, SKPaints.TextScav.Color),
+                PlayerType.PScav => (SKPaints.PaintPScav, SKPaints.TextPScav.Color),
+                PlayerType.SpecialPlayer => (SKPaints.PaintWatchlist, SKPaints.TextWatchlist.Color),
+                PlayerType.Streamer => (SKPaints.PaintStreamer, SKPaints.TextStreamer.Color),
+                _ => (SKPaints.PaintCorpse, SKPaints.PaintCorpse.Color)
+            };
         }
 
         private void DrawPlayersAndAIAsSkeletons(LocalPlayer localPlayer)

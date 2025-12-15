@@ -167,6 +167,11 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
         private string _lastTabHeader;
         private int _appliedMaxFps;
 
+        // Cached DPI/scaling factors for WPF -> Canvas coordinate conversion
+        // Updated on SizeChanged event (not every mouse move)
+        private float _dpiScaleX = 1f;
+        private float _dpiScaleY = 1f;
+
         // Ripple effect for pinged loot items
         private readonly ConcurrentDictionary<string, PingEffect> _activePings = new();
 
@@ -203,6 +208,7 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
             parent.Radar.MouseDown += Radar_MouseDown;
             parent.Radar.MouseUp += Radar_MouseUp;
             parent.Radar.MouseLeave += Radar_MouseLeave;
+            parent.Radar.SizeChanged += Radar_SizeChanged; // Subscribe to size changes for DPI scaling
             _lastRadarFrameTicks = Stopwatch.GetTimestamp();
             _ = OnStartupAsync();
             _ = RunPeriodicTimerAsync();
@@ -218,6 +224,9 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
                 while (Radar.GRContext is null)
                     await Task.Delay(10);
                 Radar.GRContext.SetResourceCacheLimit(512 * 1024 * 1024); // 512 MB
+
+                // Initialize DPI scaling factors as soon as the radar is ready
+                UpdateDpiScaleFactors();
 
                 if (App.Config.AimviewWidget.Location == default)
                 {
@@ -282,6 +291,36 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
                 _renderTimer?.Stop();
                 _renderTimer = null;
                 Radar.RenderContinuously = true;
+            }
+        }
+
+        /// <summary>
+        /// Update cached DPI scaling factors based on current Radar size.
+        /// </summary>
+        private void UpdateDpiScaleFactors()
+        {
+            try
+            {
+                double actualWidth = Radar.ActualWidth;
+                double actualHeight = Radar.ActualHeight;
+                var canvasSize = Radar.CanvasSize;
+                
+                if (actualWidth > 0 && actualHeight > 0 && canvasSize.Width > 0 && canvasSize.Height > 0)
+                {
+                    _dpiScaleX = (float)(canvasSize.Width / actualWidth);
+                    _dpiScaleY = (float)(canvasSize.Height / actualHeight);
+                }
+                else
+                {
+                    _dpiScaleX = 1f;
+                    _dpiScaleY = 1f;
+                }
+            }
+            catch
+            {
+                // Fallback to 1:1 scaling if there's any error
+                _dpiScaleX = 1f;
+                _dpiScaleY = 1f;
             }
         }
 
@@ -684,13 +723,22 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
             _mouseDown = false;
         }
 
+        /// <summary>
+        /// Handle radar control size changes to update DPI scaling factors.
+        /// This is called when the window resizes or DPI changes.
+        /// </summary>
+        private void Radar_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            UpdateDpiScaleFactors();
+        }
+
         private void Radar_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            // get mouse pos relative to the Radar control
+            // get mouse pos relative to the Radar control - apply DPI scaling
             var element = sender as IInputElement;
             var pt = e.GetPosition(element);
-            var mouseX = (float)pt.X;
-            var mouseY = (float)pt.Y;
+            var mouseX = (float)pt.X * _dpiScaleX;
+            var mouseY = (float)pt.Y * _dpiScaleY;
             var mouse = new Vector2(mouseX, mouseY);
             if (e.LeftButton is System.Windows.Input.MouseButtonState.Pressed)
             {
@@ -724,11 +772,11 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
 
         private void Radar_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
         {
-            // get mouse pos relative to the Radar control
+            // get mouse pos relative to the Radar control - apply DPI scaling
             var element = sender as IInputElement;
             var pt = e.GetPosition(element);
-            var mouseX = (float)pt.X;
-            var mouseY = (float)pt.Y;
+            var mouseX = (float)pt.X * _dpiScaleX;
+            var mouseY = (float)pt.Y * _dpiScaleY;
             var mouse = new Vector2(mouseX, mouseY);
 
             if (_mouseDown && MainWindow.Instance?.Radar?.Overlay?.ViewModel is RadarOverlayViewModel vm && vm.IsMapFreeEnabled) // panning
@@ -761,7 +809,9 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
                              < Vector2.Distance(x2.MouseoverPosition, mouse)
                         ? x1 : x2);
 
-                if (Vector2.Distance(closest.MouseoverPosition, mouse) >= 12)
+                // Scale the mouseover threshold with DPI
+                float mouseoverThreshold = 12f * _dpiScaleX;
+                if (Vector2.Distance(closest.MouseoverPosition, mouse) >= mouseoverThreshold)
                 {
                     ClearRefs();
                     return;
@@ -804,7 +854,6 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
                         MouseoverGroup = null;
                         break;
                     
-                    // ✅ Add case for regular LootItem (filtered loot items)
                     case LootItem lootItem:
                         _mouseOverItem = lootItem;
                         CurrentMouseoverItem = lootItem;

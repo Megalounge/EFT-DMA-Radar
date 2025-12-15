@@ -40,6 +40,7 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
         private readonly ulong _btrView;
         private readonly ulong _posAddr;
         private Vector3 _position;
+        private bool _hasInitialPosition;
 
         public override ref readonly Vector3 Position
         {
@@ -57,6 +58,7 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
             _btrView = btrView;
             _posAddr = _btrView + Offsets.BTRView._previousPosition;
             Type = PlayerType.AIRaider;
+            _hasInitialPosition = false;
         }
 
         /// <summary>
@@ -70,7 +72,14 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
             scatter.Completed += (sender, s) =>
             {
                 if (s.ReadValue<Vector3>(_posAddr, out var position))
-                    _position = position;
+                {
+                    // Only update position if it's valid (not zero before spawn)
+                    if (position != Vector3.Zero || _hasInitialPosition)
+                    {
+                        _position = position;
+                        _hasInitialPosition = true;
+                    }
+                }
             };
         }
     }

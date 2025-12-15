@@ -73,7 +73,7 @@ namespace LoneEftDmaRadar.Web.TarkovDev.Profiles
                 options.CircuitBreaker.StateProvider = _circuitBreakerStateProvider;
                 options.CircuitBreaker.SamplingDuration = options.AttemptTimeout.Timeout * 2;
                 options.CircuitBreaker.FailureRatio = 1.0;
-                options.CircuitBreaker.MinimumThroughput = 2;
+                options.CircuitBreaker.MinimumThroughput = 3;
                 options.CircuitBreaker.BreakDuration = TimeSpan.FromMinutes(1);
             });
         }
@@ -84,11 +84,13 @@ namespace LoneEftDmaRadar.Web.TarkovDev.Profiles
 
         public bool IsEnabled { get; } = App.Config.ProfileApi.TarkovDev.Enabled;
 
-        public bool CanRun => _circuitBreakerStateProvider.CircuitState == CircuitState.Closed; // true
+        public bool CanRun => _circuitBreakerStateProvider.CircuitState == CircuitState.Closed;
 
         private TarkovDevProfileProvider() { }
 
-        public bool CanLookup(string accountId) => !_skip.ContainsKey(accountId);
+        public bool CanLookup(string accountId) => 
+            !_skip.ContainsKey(accountId) && 
+            _circuitBreakerStateProvider.CircuitState == CircuitState.Closed;
 
         public async Task<EFTProfileResponse> GetProfileAsync(string accountId, CancellationToken ct)
         {
@@ -100,11 +102,26 @@ namespace LoneEftDmaRadar.Web.TarkovDev.Profiles
                 }
                 var client = App.HttpClientFactory.CreateClient(nameof(TarkovDevProfileProvider));
                 using var response = await client.GetAsync($"profile/{accountId}.json", ct);
+                
                 if (response.StatusCode is HttpStatusCode.NotFound)
                 {
                     _skip.TryAdd(accountId, 0);
+                    DebugLogger.LogDebug($"[TarkovDevProvider] Profile not found for '{accountId}', adding to skip list");
+                    return null;
                 }
-                response.EnsureSuccessStatusCode();
+                else if (response.StatusCode is HttpStatusCode.TooManyRequests)
+                {
+                    var content = await response.Content.ReadAsStringAsync(ct);
+                    DebugLogger.LogDebug($"[TarkovDevProvider] Rate limited (429): {content}");
+                    return null;
+                }
+                else if (!response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync(ct);
+                    DebugLogger.LogDebug($"[TarkovDevProvider] HTTP error ({response.StatusCode}): {content}");
+                    return null;
+                }
+                
                 string json = await response.Content.ReadAsStringAsync(ct);
                 using var jsonDoc = JsonDocument.Parse(json);
                 long epoch = jsonDoc.RootElement.GetProperty("updated").GetInt64();
@@ -120,7 +137,7 @@ namespace LoneEftDmaRadar.Web.TarkovDev.Profiles
             }
             catch (Exception ex)
             {
-                DebugLogger.LogDebug($"[TarkovDevProvider] Failed to get profile: {ex}");
+                DebugLogger.LogDebug($"[TarkovDevProvider] Failed to get profile '{accountId}': {ex}");
                 return null;
             }
         }
