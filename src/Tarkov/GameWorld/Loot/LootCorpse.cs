@@ -244,8 +244,14 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Loot
 
         /// <summary>
         /// Check if this corpse has any important/wishlisted items.
+        /// Only returns true for AI corpses (not PMC/human corpses).
         /// </summary>
-        public bool HasImportantItems => GetImportantItem().HasItem;
+        public bool HasImportantItems => IsAICorpse && GetAllImportantItems().Any();
+
+        /// <summary>
+        /// True if this corpse belonged to an AI (not a human player).
+        /// </summary>
+        private bool IsAICorpse => Player?.IsAI ?? false;
 
         public override void Draw(SKCanvas canvas, EftMapParams mapParams, LocalPlayer localPlayer)
         {
@@ -278,27 +284,37 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Loot
 
             var textPoint = new SKPoint(point.X + 7 * App.Config.UI.UIScale, point.Y + 3 * App.Config.UI.UIScale);
 
-            // Draw important item label ABOVE the name if exists
-            var importantItem = GetImportantItem();
-            if (importantItem.HasItem)
+            // Draw ALL important items ABOVE the name (only for AI corpses, not PMC)
+            if (IsAICorpse)
             {
-                var importantPoint = new SKPoint(textPoint.X, textPoint.Y - SKFonts.UIRegular.Spacing);
-                
-                // Get the appropriate paint based on item type
-                var importantTextPaint = GetImportantItemPaint(importantItem);
-                
-                canvas.DrawText(
-                    importantItem.Label,
-                    importantPoint,
-                    SKTextAlign.Left,
-                    SKFonts.UIRegular,
-                    SKPaints.TextOutline);
-                canvas.DrawText(
-                    importantItem.Label,
-                    importantPoint,
-                    SKTextAlign.Left,
-                    SKFonts.UIRegular,
-                    importantTextPaint);
+                var importantItems = GetAllImportantItems().ToList();
+                if (importantItems.Count > 0)
+                {
+                    // Stack items from bottom to top (so first item is closest to name)
+                    float itemOffset = importantItems.Count * SKFonts.UIRegular.Spacing;
+                    var importantPoint = new SKPoint(textPoint.X, textPoint.Y - itemOffset);
+                    
+                    foreach (var importantItem in importantItems)
+                    {
+                        // Get the appropriate paint based on item type
+                        var importantTextPaint = GetImportantItemPaint(importantItem);
+                        
+                        canvas.DrawText(
+                            importantItem.Label,
+                            importantPoint,
+                            SKTextAlign.Left,
+                            SKFonts.UIRegular,
+                            SKPaints.TextOutline);
+                        canvas.DrawText(
+                            importantItem.Label,
+                            importantPoint,
+                            SKTextAlign.Left,
+                            SKFonts.UIRegular,
+                            importantTextPaint);
+                        
+                        importantPoint.Offset(0, SKFonts.UIRegular.Spacing);
+                    }
+                }
             }
 
             // Draw corpse name

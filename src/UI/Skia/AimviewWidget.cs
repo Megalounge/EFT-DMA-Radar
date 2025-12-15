@@ -312,40 +312,43 @@ namespace LoneEftDmaRadar.UI.Skia
                     float fontSize = Math.Clamp(baseFontSize, 8f, 20f);
                     using var font = new SKFont(SKFonts.EspWidgetFont.Typeface, fontSize) { Subpixel = true };
                     
-                    // Check for important items with proper type distinction
-                    var importantItem = corpse.GetImportantItem();
                     float textY = screen.Y + r + 1;
                     
-                    // Draw important item label ABOVE the name if exists
-                    if (importantItem.HasItem)
+                    // Draw ALL important item labels ABOVE the name (only for AI corpses, not PMC/human)
+                    bool isAICorpse = corpse.Player?.IsAI ?? false;
+                    if (isAICorpse)
                     {
-                        // Get the appropriate color based on item type
-                        SKColor importantColor;
-                        if (importantItem.Type == CorpseImportantItemType.Wishlist)
+                        var importantItems = corpse.GetAllImportantItems().ToList();
+                        foreach (var importantItem in importantItems)
                         {
-                            // Wishlist items use WishlistLoot color (configurable via Color Picker)
-                            importantColor = SKPaints.TextWishlistItem.Color;
+                            // Get the appropriate color based on item type
+                            SKColor importantColor;
+                            if (importantItem.Type == CorpseImportantItemType.Wishlist)
+                            {
+                                // Wishlist items use WishlistLoot color (configurable via Color Picker)
+                                importantColor = SKPaints.TextWishlistItem.Color;
+                            }
+                            else if (!string.IsNullOrEmpty(importantItem.CustomFilterColor) && 
+                                     SKColor.TryParse(importantItem.CustomFilterColor, out var filterColor))
+                            {
+                                // Filter items use their custom color
+                                importantColor = filterColor;
+                            }
+                            else
+                            {
+                                // Fallback to ImportantLoot (ValuableLoot) color
+                                importantColor = SKPaints.TextImportantLoot.Color;
+                            }
+                            
+                            var importantPaint = new SKPaint
+                            {
+                                Color = importantColor,
+                                IsStroke = false,
+                                IsAntialias = true
+                            };
+                            _canvas.DrawText(importantItem.Label, new SKPoint(screen.X + r + 3, textY), SKTextAlign.Left, font, importantPaint);
+                            textY += fontSize + 2; // Move down for next item or corpse name
                         }
-                        else if (!string.IsNullOrEmpty(importantItem.CustomFilterColor) && 
-                                 SKColor.TryParse(importantItem.CustomFilterColor, out var filterColor))
-                        {
-                            // Filter items use their custom color
-                            importantColor = filterColor;
-                        }
-                        else
-                        {
-                            // Fallback to ImportantLoot (ValuableLoot) color
-                            importantColor = SKPaints.TextImportantLoot.Color;
-                        }
-                        
-                        var importantPaint = new SKPaint
-                        {
-                            Color = importantColor,
-                            IsStroke = false,
-                            IsAntialias = true
-                        };
-                        _canvas.DrawText(importantItem.Label, new SKPoint(screen.X + r + 3, textY), SKTextAlign.Left, font, importantPaint);
-                        textY += fontSize + 2; // Move down for corpse name
                     }
                     
                     // Draw corpse name with type

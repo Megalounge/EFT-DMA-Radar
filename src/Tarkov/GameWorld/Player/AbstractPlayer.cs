@@ -873,6 +873,17 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
                     var height = Position.Y - localPlayer.Position.Y;
                     var dist = Vector3.Distance(localPlayer.Position, Position);
                     using var lines = new PooledList<string>();
+                    
+                    // For AI only: Show wishlist items above the name
+                    if (IsAI && this is ObservedPlayer obs && obs.Equipment?.Items is not null)
+                    {
+                        var wishlistItems = GetWishlistItemLabels(obs);
+                        foreach (var itemLabel in wishlistItems)
+                        {
+                            lines.Add(itemLabel);
+                        }
+                    }
+                    
                     if (!App.Config.UI.HideNames) // show full names & info
                     {
                         string name = null;
@@ -896,7 +907,7 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
                     {
                         lines.Add($"{height:n0},{dist:n0}");
                         if (IsError)
-                            lines[0] = "ERROR"; // In case POS stops updating, let us know!
+                            lines[lines.Count - 1] = "ERROR"; // In case POS stops updating, let us know!
                     }
 
                     DrawPlayerText(canvas, point, lines);
@@ -905,6 +916,24 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
             catch (Exception ex)
             {
                 DebugLogger.LogDebug($"WARNING! Player Draw Error: {ex}");
+            }
+        }
+        
+        /// <summary>
+        /// Gets wishlist item labels for an AI player's equipment.
+        /// Returns labels in "!! ItemName" format for each wishlisted item.
+        /// </summary>
+        private static IEnumerable<string> GetWishlistItemLabels(ObservedPlayer player)
+        {
+            if (player.Equipment?.Items is null)
+                yield break;
+                
+            foreach (var item in player.Equipment.Items.Values)
+            {
+                if (LocalPlayer.WishlistItems.Contains(item.BsgId))
+                {
+                    yield return $"!! {item.ShortName}";
+                }
             }
         }
 
@@ -994,9 +1023,11 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
                 if (string.IsNullOrEmpty(line?.Trim()))
                     continue;
 
+                // Use wishlist color for lines starting with "!!"
+                var textPaint = line.StartsWith("!!") ? SKPaints.TextWishlistItem : paints.Item2;
 
                 canvas.DrawText(line, point, SKTextAlign.Left, SKFonts.UIRegular, SKPaints.TextOutline); // Draw outline
-                canvas.DrawText(line, point, SKTextAlign.Left, SKFonts.UIRegular, paints.Item2); // draw line text
+                canvas.DrawText(line, point, SKTextAlign.Left, SKFonts.UIRegular, textPaint); // draw line text
 
                 point.Offset(0, SKFonts.UIRegular.Spacing);
             }
