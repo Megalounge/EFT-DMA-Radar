@@ -252,7 +252,8 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Loot
                 
                 if (isCorpse)
                 {
-                    var corpse = new LootCorpse(interactiveClass, pos);
+                    // Pass transform to enable live position updates (e.g., when corpse slides down a hill)
+                    var corpse = new LootCorpse(interactiveClass, pos, transform);
                     _ = _loot.TryAdd(p.ItemBase, corpse);
                 }
                 if (isContainer)

@@ -6,6 +6,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows.Media;
+using LoneEftDmaRadar.DMA;
 using LoneEftDmaRadar.Tarkov;
 using LoneEftDmaRadar.Tarkov.GameWorld.Quests;
 
@@ -21,7 +22,67 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
 
         public QuestHelperViewModel()
         {
+            // Subscribe to raid events for automatic updates
+            MemDMA.RaidStarted += OnRaidStarted;
+            MemDMA.RaidStopped += OnRaidStopped;
+            
             RefreshAll();
+        }
+
+        /// <summary>
+        /// Called when a raid starts - refresh quest data and update map filter
+        /// </summary>
+        private void OnRaidStarted(object sender, EventArgs e)
+        {
+            try
+            {
+                // Use dispatcher to update UI from background thread
+                System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
+                {
+                    var mapId = Memory.MapID;
+                    var isInRaid = Memory.InRaid;
+                    
+                    _currentMapId = mapId;
+                    _isInRaid = isInRaid;
+                    
+                    // Refresh all quest data when raid starts (to get active quests from game memory)
+                    RefreshAll();
+                    
+                    OnPropertyChanged(nameof(ActiveOnlyStatusText));
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[QuestHelper] OnRaidStarted error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Called when a raid stops - clear raid-specific state
+        /// </summary>
+        private void OnRaidStopped(object sender, EventArgs e)
+        {
+            try
+            {
+                System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
+                {
+                    _currentMapId = null;
+                    _isInRaid = false;
+                    
+                    // Update the active quests info
+                    UpdateInfo();
+                    
+                    OnPropertyChanged(nameof(ActiveOnlyStatusText));
+                    
+                    // Re-apply filter to show all quests again (if ActiveOnly was enabled)
+                    if (ActiveOnly)
+                        ApplyFilter();
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[QuestHelper] OnRaidStopped error: {ex.Message}");
+            }
         }
 
         #region Config Properties

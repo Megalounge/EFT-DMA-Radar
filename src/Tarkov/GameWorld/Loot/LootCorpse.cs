@@ -29,6 +29,7 @@ SOFTWARE.
 using Collections.Pooled;
 using LoneEftDmaRadar.Tarkov.GameWorld.Player;
 using LoneEftDmaRadar.Tarkov.GameWorld.Player.Helpers;
+using LoneEftDmaRadar.Tarkov.Unity.Structures;
 using LoneEftDmaRadar.UI.Radar.Maps;
 using LoneEftDmaRadar.UI.Radar.ViewModels;
 using LoneEftDmaRadar.UI.Skia;
@@ -96,6 +97,14 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Loot
             _corpse = corpse;
         }
 
+        /// <summary>
+        /// Constructor with transform for live position updates.
+        /// </summary>
+        public LootCorpse(ulong corpse, Vector3 position, UnityTransform transform) : base(_default, position, transform)
+        {
+            _corpse = corpse;
+        }
+        
         /// <summary>
         /// Sync the corpse's player reference from a list of dead players.
         /// </summary>

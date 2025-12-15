@@ -346,11 +346,13 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld
 
         private void RefreshEquipment()
         {
-            var players = _rgtPlayers
-                .OfType<ObservedPlayer>()
-                .Where(x => !x.IsAI // Only human players
-                    && x.IsActive && x.IsAlive);
-            foreach (var player in players)
+            // Refresh ALL ObservedPlayer equipment (human and AI, living and dead)
+            // This ensures:
+            // - Human player gear is tracked
+            // - AI player "!!" wishlist markers update when items are looted
+            // - Dead player/corpse equipment stays current
+            var allPlayers = _rgtPlayers.OfType<ObservedPlayer>();
+            foreach (var player in allPlayers)
             {
                 player.Equipment.Refresh();
             }
