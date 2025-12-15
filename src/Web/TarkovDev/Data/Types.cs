@@ -75,6 +75,9 @@ namespace LoneEftDmaRadar.Web.TarkovDev.Data
 
             [JsonPropertyName("maps")]
             public List<object> Maps { get; set; }
+
+            [JsonPropertyName("tasks")]
+            public List<TaskElement> Tasks { get; set; }
         }
         public class WarningMessage
         {

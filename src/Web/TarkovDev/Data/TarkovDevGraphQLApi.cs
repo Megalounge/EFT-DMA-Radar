@@ -72,6 +72,8 @@ namespace LoneEftDmaRadar.Web.TarkovDev.Data
 
         public static async Task<string> GetTarkovDataAsync()
         {
+            // Updated query to use inline fragments for union types (TaskObjective)
+            // The tarkov.dev API uses union types for objectives, so we need to use ... on TypeName syntax
             var query = new Dictionary<string, string>
             {
                 { "query",
@@ -115,6 +117,118 @@ namespace LoneEftDmaRadar.Web.TarkovDev.Data
                         id 
                         normalizedName 
                         name 
+                    }
+                    tasks {
+                        id
+                        tarkovDataId
+                        name
+                        trader {
+                            name
+                        }
+                        map {
+                            nameId
+                            name
+                        }
+                        objectives {
+                            id
+                            type
+                            description
+                            maps {
+                                nameId
+                                name
+                            }
+                            ... on TaskObjectiveBasic {
+                                zones {
+                                    id
+                                    map {
+                                        nameId
+                                        name
+                                    }
+                                    position {x,y,z}
+                                }
+                            }
+                            ... on TaskObjectiveItem {
+                                count
+                                foundInRaid
+                                item {
+                                    id
+                                    name
+                                    shortName
+                                }
+                                zones {
+                                    id
+                                    map {
+                                        nameId
+                                        name
+                                    }
+                                    position {x,y,z}
+                                }
+                            }
+                            ... on TaskObjectiveQuestItem {
+                                questItem {
+                                    id
+                                    name
+                                    shortName
+                                    normalizedName
+                                    description
+                                }
+                                zones {
+                                    id
+                                    map {
+                                        nameId
+                                        name
+                                    }
+                                    position {x,y,z}
+                                }
+                            }
+                            ... on TaskObjectiveMark {
+                                markerItem {
+                                    id
+                                    name
+                                    shortName
+                                }
+                                zones {
+                                    id
+                                    map {
+                                        nameId
+                                        name
+                                    }
+                                    position {x,y,z}
+                                }
+                            }
+                            ... on TaskObjectiveShoot {
+                                count
+                                zones {
+                                    id
+                                    map {
+                                        nameId
+                                        name
+                                    }
+                                    position {x,y,z}
+                                }
+                            }
+                            ... on TaskObjectiveExtract {
+                                count
+                            }
+                            ... on TaskObjectiveBuildItem {
+                                item {
+                                    id
+                                    name
+                                    shortName
+                                }
+                            }
+                        }
+                        neededKeys {
+                            keys {
+                                id
+                                name
+                                shortName
+                            }
+                            map {
+                                nameId
+                                name
+                            }
+                        }
                     }
                 }
                 """

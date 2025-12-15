@@ -152,27 +152,32 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
                 // Save currently tracked quest IDs
                 var currentlyTracked = AllQuests.Where(q => q.IsTracked).Select(q => q.QuestId).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 
-                // Try to fetch fresh data from API
+                // Try to fetch fresh data from API (this runs on background thread)
                 await TarkovDataManager.RefreshFromApiAsync();
                 
-                LoadQuests();
-                
-                // Restore tracked state
-                foreach (var quest in AllQuests)
+                // Switch back to UI thread for ObservableCollection updates
+                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                 {
-                    if (currentlyTracked.Contains(quest.QuestId))
+                    LoadQuests();
+                    
+                    // Restore tracked state
+                    foreach (var quest in AllQuests)
                     {
-                        quest._isTracked = true;
+                        if (currentlyTracked.Contains(quest.QuestId))
+                        {
+                            quest._isTracked = true;
+                        }
                     }
-                }
-                
-                ApplyFilter();
-                UpdateInfo();
+                    
+                    ApplyFilter();
+                    UpdateInfo();
+                });
             }
-            catch
+            catch (Exception ex)
             {
-                // If API fails, just do a normal refresh with cached data
-                RefreshAll();
+                System.Diagnostics.Debug.WriteLine($"[QuestHelper] RefreshFromApiAsync failed: {ex.Message}");
+                // If API fails, just do a normal refresh with cached data on UI thread
+                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() => RefreshAll());
             }
         }
 

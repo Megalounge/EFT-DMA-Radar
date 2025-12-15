@@ -27,6 +27,7 @@ SOFTWARE.
 */
 
 using LoneEftDmaRadar.Tarkov.GameWorld.Quests;
+using LoneEftDmaRadar.UI.Misc;
 using LoneEftDmaRadar.Web.TarkovDev.Data;
 using System.Collections.Frozen;
 using QuestObjectiveType = LoneEftDmaRadar.Tarkov.GameWorld.Quests.QuestObjectiveType;
@@ -76,6 +77,11 @@ namespace LoneEftDmaRadar.Tarkov
         /// XP Table for Tarkov.
         /// </summary>
         public static IReadOnlyDictionary<int, int> XPTable { get; private set; }
+        
+        /// <summary>
+        /// Event raised when progress is updated during startup.
+        /// </summary>
+        public static event Action<string> OnProgressUpdate;
 
         #region Startup
 
@@ -144,25 +150,34 @@ namespace LoneEftDmaRadar.Tarkov
 
         /// <summary>
         /// Loads Game/Loot Data and sets the static dictionaries.
-        /// If updated data is needed, spawns a background task to retrieve it.
+        /// Always fetches fresh data from the API during startup.
         /// </summary>
         /// <returns></returns>
         private static async Task LoadDataAsync()
         {
+            // First, load cached/default data for a fast startup fallback
+            OnProgressUpdate?.Invoke("Loading cached data...");
+            
             if (_dataFile.Exists)
             {
-                DateTime lastWriteTime = File.GetLastWriteTime(_dataFile.FullName);
-                await LoadDiskDataAsync();
-                if (lastWriteTime < DateTime.Now.Subtract(TimeSpan.FromHours(4))) // only update every 4h
+                try
                 {
-                    _ = Task.Run(LoadRemoteDataAsync); // Run continuations on the thread pool.
+                    await LoadDiskDataAsync();
+                    DebugLogger.LogDebug($"[TarkovDataManager] Loaded cached data: Items={AllItems?.Count ?? 0}, Tasks={TaskData?.Count ?? 0}");
+                }
+                catch
+                {
+                    await LoadDefaultDataAsync();
                 }
             }
             else
             {
                 await LoadDefaultDataAsync();
-                _ = Task.Run(LoadRemoteDataAsync); // Run continuations on the thread pool.
             }
+            
+            // Now fetch fresh data from the API (synchronously during startup)
+            OnProgressUpdate?.Invoke("Fetching fresh data from tarkov.dev...");
+            await LoadRemoteDataAsync();
         }
 
         /// <summary>
@@ -194,6 +209,8 @@ namespace LoneEftDmaRadar.Tarkov
                 .DistinctBy(t => t.Id, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(t => t.Id, t => t, StringComparer.OrdinalIgnoreCase)
                 .ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+            
+            DebugLogger.LogDebug($"[TarkovDataManager] SetData: Items={AllItems.Count}, Containers={AllContainers.Count}, Tasks={TaskData.Count}");
             
             // Task Zones - with extensive null checks
             try
@@ -256,7 +273,12 @@ namespace LoneEftDmaRadar.Tarkov
             try
             {
                 if (TaskData == null || TaskData.Count == 0)
+                {
+                    DebugLogger.LogDebug("[TarkovDataManager] No TaskData available for QuestDatabase initialization");
                     return;
+                }
+
+                DebugLogger.LogDebug($"[TarkovDataManager] Initializing QuestDatabase with {TaskData.Count} tasks");
 
                 // Convert TaskData to API format for QuestDatabase
                 var tasks = TaskData.Values.Select(t => new Web.TarkovDev.Data.TaskElement
@@ -272,11 +294,27 @@ namespace LoneEftDmaRadar.Tarkov
                         NameId = t.Map.NameId,
                         Name = t.Map.Name
                     } : null,
+                    NeededKeys = t.NeededKeys?.Select(nk => new Web.TarkovDev.Data.NeededKeyGroupElement
+                    {
+                        Keys = nk.Keys?.Select(k => new Web.TarkovDev.Data.ItemReferenceElement
+                        {
+                            Id = k.Id,
+                            Name = k.Name,
+                            ShortName = k.ShortName
+                        }).ToList(),
+                        Map = nk.Map != null ? new Web.TarkovDev.Data.MapReferenceElement
+                        {
+                            NameId = nk.Map.NameId,
+                            Name = nk.Map.Name
+                        } : null
+                    }).ToList(),
                     Objectives = t.Objectives?.Select(o => new Web.TarkovDev.Data.TaskObjectiveElement
                     {
                         Id = o.Id,
                         Type = o._type,
                         Description = o.Description,
+                        Count = o.Count,
+                        FoundInRaid = o.FoundInRaid,
                         Item = o.Item != null ? new Web.TarkovDev.Data.ItemReferenceElement
                         {
                             Id = o.Item.Id,
@@ -294,6 +332,19 @@ namespace LoneEftDmaRadar.Tarkov
                             Id = o.MarkerItem.Id,
                             Name = o.MarkerItem.Name
                         } : null,
+                        RequiredKeys = o.RequiredKeys?.Select(keyList => 
+                            keyList?.Select(k => new Web.TarkovDev.Data.ItemReferenceElement
+                            {
+                                Id = k.Id,
+                                Name = k.Name,
+                                ShortName = k.ShortName
+                            }).ToList()
+                        ).ToList(),
+                        Maps = o.Maps?.Select(m => new Web.TarkovDev.Data.MapReferenceElement
+                        {
+                            NameId = m.NameId,
+                            Name = m.Name
+                        }).ToList(),
                         Zones = o.Zones?.Select(z => new Web.TarkovDev.Data.ZoneElement
                         {
                             Id = z.Id,
@@ -313,9 +364,11 @@ namespace LoneEftDmaRadar.Tarkov
                 }).ToList();
 
                 QuestDatabase.Initialize(tasks);
+                DebugLogger.LogDebug($"[TarkovDataManager] QuestDatabase initialized: {QuestDatabase.IsInitialized}, Quests: {QuestDatabase.AllQuests.Count}");
             }
-            catch
+            catch (Exception ex)
             {
+                DebugLogger.LogDebug($"[TarkovDataManager] QuestDatabase initialization failed: {ex}");
                 // QuestDatabase initialization failure should not break the main data loading
             }
         }
@@ -352,6 +405,7 @@ namespace LoneEftDmaRadar.Tarkov
                 await LoadDefaultDataAsync();
                 return;
             }
+            
             SetData(data);
 
             static async Task<TarkovData> TryLoadFromDiskAsync(FileInfo file)
@@ -380,8 +434,11 @@ namespace LoneEftDmaRadar.Tarkov
         {
             try
             {
+                OnProgressUpdate?.Invoke("Connecting to tarkov.dev API...");
                 string dataJson = await TarkovDevDataJob.GetUpdatedDataAsync();
                 ArgumentNullException.ThrowIfNull(dataJson, nameof(dataJson));
+                
+                OnProgressUpdate?.Invoke("Saving data to cache...");
                 await File.WriteAllTextAsync(_tempDataFile.FullName, dataJson);
                 if (_dataFile.Exists)
                 {
@@ -402,19 +459,21 @@ namespace LoneEftDmaRadar.Tarkov
                         destFileName: _dataFile.FullName,
                         overwrite: true);
                 }
+                
+                OnProgressUpdate?.Invoke("Processing game data...");
                 var data = JsonSerializer.Deserialize<TarkovData>(dataJson, _jsonOptions) ??
                     throw new InvalidOperationException($"Failed to deserialize {nameof(dataJson)}");
                 SetData(data);
+                
+                OnProgressUpdate?.Invoke($"Loaded {AllItems?.Count ?? 0} items, {TaskData?.Count ?? 0} tasks");
+                DebugLogger.LogDebug($"[TarkovDataManager] Successfully loaded remote data: Items={AllItems?.Count ?? 0}, Tasks={TaskData?.Count ?? 0}");
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    messageBoxText: $"An unhandled exception occurred while retrieving updated Game/Loot Data from the web: {ex}",
-                    caption: App.Name,
-                    button: MessageBoxButton.OK,
-                    icon: MessageBoxImage.Warning,
-                    defaultResult: MessageBoxResult.OK,
-                    options: MessageBoxOptions.DefaultDesktopOnly);
+                // Log the error but don't throw - we already have cached/default data
+                OnProgressUpdate?.Invoke("API failed, using cached data");
+                DebugLogger.LogDebug($"[TarkovDataManager] LoadRemoteDataAsync failed: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[TarkovDataManager] LoadRemoteDataAsync failed: {ex}");
             }
         }
 

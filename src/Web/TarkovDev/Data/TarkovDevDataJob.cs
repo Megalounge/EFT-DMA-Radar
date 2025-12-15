@@ -71,12 +71,20 @@ namespace LoneEftDmaRadar.Web.TarkovDev.Data
         public static async Task<string> GetUpdatedDataAsync()
         {
             var json = await TarkovDevGraphQLApi.GetTarkovDataAsync();
-            var data = JsonSerializer.Deserialize<TarkovDevDataQuery>(json, _jsonOptions) ??
-                throw new InvalidOperationException("Failed to deserialize Tarkov data.");
+            var data = JsonSerializer.Deserialize<TarkovDevDataQuery>(json, _jsonOptions);
+            
+            if (data?.Data == null)
+            {
+                // Log the raw response for debugging
+                System.Diagnostics.Debug.WriteLine($"[TarkovDevDataJob] API returned null data. Raw response (first 500 chars): {json?.Substring(0, Math.Min(json?.Length ?? 0, 500))}");
+                throw new InvalidOperationException("API returned null data - the GraphQL response format may have changed.");
+            }
+            
             var result = new OutgoingTarkovMarketData
             {
                 Items = ParseMarketData(data),
-                Maps = data.Data.Maps
+                Maps = data.Data.Maps ?? new List<object>(),
+                Tasks = data.Data.Tasks ?? new List<TaskElement>()
             };
             return JsonSerializer.Serialize(result);
         }
@@ -84,33 +92,44 @@ namespace LoneEftDmaRadar.Web.TarkovDev.Data
         private static List<OutgoingItem> ParseMarketData(TarkovDevDataQuery data)
         {
             var outgoingItems = new List<OutgoingItem>();
-            foreach (var item in data.Data.Items)
+            
+            if (data.Data?.Items != null)
             {
-                int slots = item.Width * item.Height;
-                outgoingItems.Add(new OutgoingItem
+                foreach (var item in data.Data.Items)
                 {
-                    ID = item.Id,
-                    ShortName = item.ShortName,
-                    Name = item.Name,
-                    Categories = item.Categories?.Select(x => x.Name)?.ToList() ?? new(), // Flatten categories
-                    TraderPrice = item.HighestVendorPrice,
-                    FleaPrice = item.OptimalFleaPrice,
-                    Slots = slots
-                });
+                    if (item == null) continue;
+                    int slots = item.Width * item.Height;
+                    outgoingItems.Add(new OutgoingItem
+                    {
+                        ID = item.Id,
+                        ShortName = item.ShortName,
+                        Name = item.Name,
+                        Categories = item.Categories?.Select(x => x.Name)?.ToList() ?? new(), // Flatten categories
+                        TraderPrice = item.HighestVendorPrice,
+                        FleaPrice = item.OptimalFleaPrice,
+                        Slots = slots
+                    });
+                }
             }
-            foreach (var container in data.Data.LootContainers)
+            
+            if (data.Data?.LootContainers != null)
             {
-                outgoingItems.Add(new OutgoingItem
+                foreach (var container in data.Data.LootContainers)
                 {
-                    ID = container.Id,
-                    ShortName = container.Name,
-                    Name = container.NormalizedName,
-                    Categories = new() { "Static Container" },
-                    TraderPrice = -1,
-                    FleaPrice = -1,
-                    Slots = 1
-                });
+                    if (container == null) continue;
+                    outgoingItems.Add(new OutgoingItem
+                    {
+                        ID = container.Id,
+                        ShortName = container.Name,
+                        Name = container.NormalizedName,
+                        Categories = new() { "Static Container" },
+                        TraderPrice = -1,
+                        FleaPrice = -1,
+                        Slots = 1
+                    });
+                }
             }
+            
             return outgoingItems;
         }
 
@@ -125,6 +144,9 @@ namespace LoneEftDmaRadar.Web.TarkovDev.Data
 
             [JsonPropertyName("maps")]
             public List<object> Maps { get; set; }
+
+            [JsonPropertyName("tasks")]
+            public List<TaskElement> Tasks { get; set; }
         }
 
         private sealed class OutgoingItem
