@@ -32,6 +32,7 @@ using LoneEftDmaRadar.Tarkov.GameWorld.Exits;
 using LoneEftDmaRadar.Tarkov.GameWorld.Explosives;
 using LoneEftDmaRadar.Tarkov.GameWorld.Loot;
 using LoneEftDmaRadar.Tarkov.GameWorld.Player;
+using LoneEftDmaRadar.Tarkov.GameWorld.Quests;
 using LoneEftDmaRadar.UI.Loot;
 using LoneEftDmaRadar.UI.Misc;
 using LoneEftDmaRadar.UI.Radar.Maps;
@@ -505,6 +506,19 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
 
                     // Draw LocalPlayer over everything else
                     localPlayer.Draw(canvas, mapParams, localPlayer);
+
+                    // Draw active quest zones (if enabled)
+                    if (App.Config.QuestHelper.Enabled)
+                    {
+                        var questManager = Memory.Game?.QuestManager;
+                        if (questManager != null)
+                        {
+                            foreach (var zone in questManager.ActiveZones)
+                            {
+                                zone.Draw(canvas, mapParams, localPlayer);
+                            }
+                        }
+                    }
 
                     if (allPlayers is not null && App.Config.InfoWidget.Enabled) // Players Overlay
                     {

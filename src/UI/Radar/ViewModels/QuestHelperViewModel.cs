@@ -45,10 +45,19 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
                     _currentMapId = mapId;
                     _isInRaid = isInRaid;
                     
+                    // Automatically enable ActiveOnly filter when entering raid
+                    if (!ActiveOnly)
+                    {
+                        App.Config.QuestHelper.ActiveOnly = true;
+                        OnPropertyChanged(nameof(ActiveOnly));
+                    }
+                    
                     // Refresh all quest data when raid starts (to get active quests from game memory)
                     RefreshAll();
                     
                     OnPropertyChanged(nameof(ActiveOnlyStatusText));
+                    
+                    System.Diagnostics.Debug.WriteLine($"[QuestHelper] Raid started on map: {mapId}, filtering active quests");
                 });
             }
             catch (Exception ex)
@@ -137,7 +146,10 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
                     return "";
                 if (!_isInRaid)
                     return "Not in raid - showing all quests";
-                return $"Showing active quests for: {GetMapName(_currentMapId)}";
+                
+                var activeCount = AllQuests.Count(q => q.IsActive);
+                var filteredCount = FilteredQuests.Count;
+                return $"Map: {GetMapName(_currentMapId)} | Active: {filteredCount}/{activeCount} quests";
             }
         }
 
@@ -296,6 +308,8 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
                           ?? new HashSet<string>();
             var trackedIds = App.Config.QuestHelper.TrackedQuests;
 
+            System.Diagnostics.Debug.WriteLine($"[QuestHelper] LoadQuests: Found {activeIds.Count} active quests from memory");
+
             foreach (var quest in QuestDatabase.AllQuests.Values.OrderBy(q => q.TraderName).ThenBy(q => q.Name))
             {
                 bool isActive = activeIds.Contains(quest.Id);
@@ -326,6 +340,7 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
 
             UpdateSelectAllButton();
             UpdateCounts();
+            OnPropertyChanged(nameof(ActiveOnlyStatusText));
         }
 
         private bool PassesFilter(QuestTrackingEntry quest)
@@ -338,46 +353,99 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
                     return false;
             }
 
-            // Active Only filter: when enabled and in raid, show only active quests for current map
+            // Active Only filter: when enabled and in raid, show only active quests that have objectives on current map
             if (ActiveOnly && _isInRaid)
             {
-                if (!quest.IsActive) return false;
-                if (!IsQuestForMap(quest.QuestId, _currentMapId)) return false;
+                // Must be an active quest (from LocalPlayer's quest list in memory)
+                if (!quest.IsActive) 
+                    return false;
+                
+                // Must have objectives on the current map
+                if (!HasObjectivesOnMap(quest.QuestId, _currentMapId)) 
+                    return false;
             }
 
             return true;
         }
 
-        private static bool IsQuestForMap(string questId, string mapId)
+        /// <summary>
+        /// Checks if a quest has any objectives that need to be completed on the specified map.
+        /// Returns true if:
+        /// - The quest's main map matches the current map
+        /// - Any objective zone is on the current map
+        /// - The quest has objectives that can be done anywhere (like "hand over items" without specific zone)
+        /// </summary>
+        private static bool HasObjectivesOnMap(string questId, string mapId)
         {
-            if (string.IsNullOrEmpty(mapId)) return true;
-            if (!TarkovDataManager.TaskData.TryGetValue(questId, out var task)) return true;
+            if (string.IsNullOrEmpty(mapId)) 
+                return true;
+            
+            if (!TarkovDataManager.TaskData.TryGetValue(questId, out var task)) 
+                return false; // Quest not found in data, don't show
 
-            // Check task map
+            // Check if task has a specific map assigned
             if (task.Map?.NameId != null)
+            {
+                // Task is map-specific - only show if we're on that map
                 return IsMapMatch(task.Map.NameId, mapId);
+            }
 
-            // Check objective zones
+            // Check objectives for map-specific zones
+            bool hasMapSpecificObjective = false;
+            bool hasAnyMapObjective = false;
+            
             if (task.Objectives != null)
             {
                 foreach (var obj in task.Objectives)
                 {
+                    // Check objective-level maps
+                    if (obj.Maps != null && obj.Maps.Count > 0)
+                    {
+                        foreach (var objMap in obj.Maps)
+                        {
+                            if (objMap?.NameId != null)
+                            {
+                                hasMapSpecificObjective = true;
+                                if (IsMapMatch(objMap.NameId, mapId))
+                                    hasAnyMapObjective = true;
+                            }
+                        }
+                    }
+                    
+                    // Check objective zones
                     if (obj.Zones != null)
+                    {
                         foreach (var zone in obj.Zones)
-                            if (zone.Map?.NameId != null && IsMapMatch(zone.Map.NameId, mapId))
-                                return true;
+                        {
+                            if (zone?.Map?.NameId != null)
+                            {
+                                hasMapSpecificObjective = true;
+                                if (IsMapMatch(zone.Map.NameId, mapId))
+                                    hasAnyMapObjective = true;
+                            }
+                        }
+                    }
                 }
             }
+            
+            // If quest has map-specific objectives, only show if at least one matches current map
+            if (hasMapSpecificObjective)
+                return hasAnyMapObjective;
 
-            return true; // No map restriction
+            // Quest has no map restrictions (e.g., "hand over items to trader", "reach level X")
+            // These quests are not shown for any specific map since they can be done anywhere/anytime
+            // Only show them if we're not doing map-based filtering
+            return false;
         }
 
         private static bool IsMapMatch(string a, string b)
         {
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b))
+                return false;
             if (a.Equals(b, StringComparison.OrdinalIgnoreCase)) return true;
-            // Factory aliases
+            // Factory aliases (factory4_day, factory4_night)
             if (IsFactory(a) && IsFactory(b)) return true;
-            // Ground Zero aliases
+            // Ground Zero aliases (sandbox, sandbox_high)
             if (IsSandbox(a) && IsSandbox(b)) return true;
             return false;
         }

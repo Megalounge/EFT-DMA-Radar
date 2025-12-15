@@ -324,6 +324,27 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld
             RefreshEquipment();
             // Refresh Wishlist
             RefreshWishlist();
+            // Refresh Quest zones and objectives
+            RefreshQuests(ct);
+        }
+
+        /// <summary>
+        /// Refreshes the quest manager with active quests and zones.
+        /// </summary>
+        private void RefreshQuests(CancellationToken ct)
+        {
+            if (!App.Config.QuestHelper.Enabled)
+                return;
+
+            try
+            {
+                var profilePtr = LocalPlayer?.Profile ?? 0;
+                _questManager?.Refresh(profilePtr, ct);
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.LogDebug($"[QuestManager] ERROR Refreshing: {ex}");
+            }
         }
 
         /// <summary>
