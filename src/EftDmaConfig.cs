@@ -503,6 +503,13 @@ namespace LoneEftDmaRadar
         /// </summary>
         [JsonPropertyName("enableMemMap")]
         public bool MemMapEnabled { get; set; } = true;
+
+        /// <summary>
+        /// Force a full memory refresh when a raid ends to prevent stale pointer issues.
+        /// This can help with raid detection problems on some systems.
+        /// </summary>
+        [JsonPropertyName("autoRefreshOnRaidEnd")]
+        public bool AutoRefreshOnRaidEnd { get; set; } = true;
     }
 
     public sealed class UIConfig

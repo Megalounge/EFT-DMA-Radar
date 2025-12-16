@@ -268,8 +268,13 @@ namespace LoneEftDmaRadar.DMA
                 {
                     var ct = Restart;
 
+                    // Force a refresh before starting a new raid to ensure clean state
+                    DebugLogger.LogDebug("[MemDMA] Preparing to find new raid...");
+                    _vmm.ForceFullRefresh();
+
                     using (var game = Game = LocalGameWorld.CreateGameInstance(ct))
                     {
+                        DebugLogger.LogDebug($"[MemDMA] Raid found! MapID: {game.MapID}");
                         OnRaidStarted();
                         game.Start();
 
@@ -315,21 +320,23 @@ namespace LoneEftDmaRadar.DMA
                             game.Refresh();
                             Thread.Sleep(133);
                         }
+                        
+                        DebugLogger.LogDebug("[MemDMA] Raid ended (InRaid = false)");
                     }
                 }
                 catch (OperationCanceledException ex) // Restart Radar
                 {
-                    DebugLogger.LogDebug(ex.Message);
+                    DebugLogger.LogDebug($"[MemDMA] Radar restart requested: {ex.Message}");
                     continue;
                 }
                 catch (ProcessNotRunningException ex) // Process Closed
                 {
-                    DebugLogger.LogDebug(ex.Message);
+                    DebugLogger.LogDebug($"[MemDMA] Process not running: {ex.Message}");
                     break;
                 }
                 catch (Exception ex)
                 {
-                    DebugLogger.LogDebug($"Unhandled Exception in Game Loop: {ex}");
+                    DebugLogger.LogDebug($"[MemDMA] Unhandled Exception in Game Loop: {ex}");
                     break;
                 }
                 finally
@@ -363,8 +370,31 @@ namespace LoneEftDmaRadar.DMA
 
         private void MemDMA_RaidStopped(object sender, EventArgs e)
         {
+            DebugLogger.LogDebug("[MemDMA] RaidStopped - Invalidating all raid-specific caches...");
+            
+            // Clear game reference
             Game = null;
+            
+            // Notify device aimbot
             _deviceAimbot?.OnRaidEnd();
+            
+            // Force full memory refresh to clear all cached data
+            // This prevents stale pointers from causing issues in the next raid
+            if (App.Config.DMA.AutoRefreshOnRaidEnd)
+            {
+                try
+                {
+                    DebugLogger.LogDebug("[MemDMA] Forcing full VMM refresh after raid end...");
+                    _vmm.ForceFullRefresh();
+                    DebugLogger.LogDebug("[MemDMA] VMM refresh complete.");
+                }
+                catch (Exception ex)
+                {
+                    DebugLogger.LogDebug($"[MemDMA] Warning: VMM refresh failed: {ex.Message}");
+                }
+            }
+            
+            DebugLogger.LogDebug("[MemDMA] RaidStopped cleanup complete.");
         }
 
         /// <summary>
@@ -608,7 +638,7 @@ namespace LoneEftDmaRadar.DMA
         /// <summary>
         /// Read null terminated UTF8 string.
         /// </summary>
-        public string ReadUtf8String(ulong addr, int cb, bool useCache = true) // read n bytes (string)
+        public string ReadUtf8String(ulong addr, int cb, bool useCache = true)
         {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(cb, 0x1000, nameof(cb));
             var flags = useCache ? VmmFlags.NONE : VmmFlags.NOCACHE;
@@ -633,7 +663,6 @@ namespace LoneEftDmaRadar.DMA
         public void WriteValue<T>(ulong addr, in T value, bool useCache = false)
             where T : unmanaged
         {
-            // VmmSharpEx write calls do not expose cache flags; writes are always uncached.
             if (!_vmm.MemWriteValue(_pid, addr, value))
                 throw new VmmException("Memory Write Failed!");
         }
@@ -662,7 +691,6 @@ namespace LoneEftDmaRadar.DMA
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ulong FindSignature(string signature)
         {
-
             if (!_vmm.Map_GetModuleFromName(_pid, "UnityPlayer.dll", out var info))
                 throw new VmmException("Failed to get process information.");
             return _vmm.FindSignature(_pid, signature, info.vaBase, info.vaBase + info.cbImageSize);
