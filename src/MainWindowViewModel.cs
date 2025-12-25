@@ -29,7 +29,6 @@ SOFTWARE.
 using LoneEftDmaRadar.UI.Hotkeys;
 using LoneEftDmaRadar.UI.Radar.ViewModels;
 using LoneEftDmaRadar.UI.ESP;
-using LoneEftDmaRadar.DMA;
 
 namespace LoneEftDmaRadar
 {
@@ -179,9 +178,9 @@ namespace LoneEftDmaRadar
             // Fallback to ViewModel-based approach if direct access fails.
             try
             {
-                if (MemDMA.DeviceAimbot != null)
+                if (Memory.DeviceAimbot != null)
                 {
-                    MemDMA.DeviceAimbot.IsEngaged = e.State;
+                    Memory.DeviceAimbot.IsEngaged = e.State;
                     return;
                 }
             }

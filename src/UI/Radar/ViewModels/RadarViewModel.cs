@@ -56,52 +56,52 @@ namespace LoneEftDmaRadar.UI.Radar.ViewModels
         /// <summary>
         /// Game has started and Radar is starting up...
         /// </summary>
-        private static bool Starting => Memory?.Starting ?? false;
+        private static bool Starting => Memory.Starting;
 
         /// <summary>
         /// Radar has found Escape From Tarkov process and is ready.
         /// </summary>
-        private static bool Ready => Memory?.Ready ?? false;
+        private static bool Ready => Memory.Ready;
 
         /// <summary>
         /// Radar has found Local Game World, and a Raid Instance is active.
         /// </summary>
-        private static bool InRaid => Memory?.InRaid ?? false;
+        private static bool InRaid => Memory.InRaid;
 
         /// <summary>
         /// Map Identifier of Current Map.
         /// </summary>
-        private static string MapID => Memory?.MapID;
+        private static string MapID => Memory.MapID;
 
         /// <summary>
         /// LocalPlayer (who is running Radar) 'Player' object.
         /// </summary>
-        private static LocalPlayer LocalPlayer => Memory?.LocalPlayer;
+        private static LocalPlayer LocalPlayer => Memory.LocalPlayer;
 
         /// <summary>
         /// All Filtered Loot on the map.
         /// </summary>
-        private static IEnumerable<LootItem> Loot => Memory?.Loot?.FilteredLoot;
+        private static IEnumerable<LootItem> Loot => Memory.Loot?.FilteredLoot;
 
         /// <summary>
         /// All Static Containers on the map.
         /// </summary>
-        private static IEnumerable<StaticLootContainer> Containers => Memory?.Loot?.StaticContainers;
+        private static IEnumerable<StaticLootContainer> Containers => Memory.Loot?.StaticContainers;
 
         /// <summary>
         /// All Players in Local Game World (including dead/exfil'd) 'Player' collection.
         /// </summary>
-        private static IReadOnlyCollection<AbstractPlayer> AllPlayers => Memory?.Players;
+        private static IReadOnlyCollection<AbstractPlayer> AllPlayers => Memory.Players;
 
         /// <summary>
         /// Contains all 'Hot' explosives in Local Game World, and their position(s).
         /// </summary>
-        private static IReadOnlyCollection<IExplosiveItem> Explosives => Memory?.Explosives;
+        private static IReadOnlyCollection<IExplosiveItem> Explosives => Memory.Explosives;
 
         /// <summary>
         /// Contains all 'Exits' in Local Game World, and their status/position(s).
         /// </summary>
-        private static IReadOnlyCollection<IExitPoint> Exits => Memory?.Exits;
+        private static IReadOnlyCollection<IExitPoint> Exits => Memory.Exits;
 
         /// <summary>
         /// Item Search Filter has been set/applied.

@@ -1,7 +1,7 @@
 /*
  * Lone EFT DMA Radar
  * Brought to you by Lone (Lone DMA)
- * 
+ *
 MIT License
 
 Copyright (c) 2025 Lone DMA
@@ -26,6 +26,7 @@ SOFTWARE.
  *
 */
 
+global using LoneEftDmaRadar.DMA;
 using Collections.Pooled;
 using LoneEftDmaRadar.Common.DMA;
 using LoneEftDmaRadar.Misc;
@@ -42,125 +43,137 @@ using VmmSharpEx.Extensions;
 using VmmSharpEx.Options;
 using VmmSharpEx.Refresh;
 using VmmSharpEx.Scatter;
+using System.Buffers;
 
 namespace LoneEftDmaRadar.DMA
 {
     /// <summary>
     /// DMA Memory Module.
     /// </summary>
-    public sealed class MemDMA : IDisposable
+    internal static class Memory
     {
         #region Init
 
-        private DeviceAimbot _deviceAimbot;
-        public static DeviceAimbot DeviceAimbot { get; private set; }
+        private static DeviceAimbot _deviceAimbot;
+        public static DeviceAimbot DeviceAimbot => _deviceAimbot;
 
         private const string GAME_PROCESS_NAME = "EscapeFromTarkov.exe";
         internal const uint MAX_READ_SIZE = 0x1000u * 1500u;
         private static readonly string _mmap = Path.Combine(App.ConfigPath.FullName, "mmap.txt");
-        private readonly Vmm _vmm;
-        private readonly InputManager _input;
-        private uint _pid;
-        public string MapID => Game?.MapID;
-        public ulong UnityBase { get; private set; }
-        public ulong GOM { get; private set; }
-        public bool Starting { get; private set; }
-        public bool Ready { get; private set; }
-        public bool InRaid => Game?.InRaid ?? false;
+        private static Vmm _vmm;
+        private static InputManager _input;
+        private static uint _pid;
+        public static string MapID => Game?.MapID;
+        public static ulong UnityBase { get; private set; }
+        public static ulong GOM { get; private set; }
+        public static bool Starting { get; private set; }
+        public static bool Ready { get; private set; }
+        public static bool InRaid => Game?.InRaid ?? false;
         public static CameraManager CameraManager { get; internal set; }
 
-        public IReadOnlyCollection<AbstractPlayer> Players => Game?.Players;
-        public IReadOnlyCollection<IExplosiveItem> Explosives => Game?.Explosives;
-        public IReadOnlyCollection<IExitPoint> Exits => Game?.Exits;
-        public LocalPlayer LocalPlayer => Game?.LocalPlayer;
-        public LootManager Loot => Game?.Loot;
-        public LocalGameWorld Game { get; private set; }
+        public static IReadOnlyCollection<AbstractPlayer> Players => Game?.Players;
+        public static IReadOnlyCollection<IExplosiveItem> Explosives => Game?.Explosives;
+        public static IReadOnlyCollection<IExitPoint> Exits => Game?.Exits;
+        public static LocalPlayer LocalPlayer => Game?.LocalPlayer;
+        public static LootManager Loot => Game?.Loot;
+        public static LocalGameWorld Game { get; private set; }
 
-        internal MemDMA()
+        /// <summary>
+        /// Initialize the DMA Memory Module.
+        /// </summary>
+        public static Task ModuleInitAsync()
         {
-            FpgaAlgo fpgaAlgo = App.Config.DMA.FpgaAlgo;
-            bool useMemMap = App.Config.DMA.MemMapEnabled;
-            DebugLogger.LogDebug("Initializing DMA...");
-            /// Check MemProcFS Versions...
-            string vmmVersion = FileVersionInfo.GetVersionInfo("vmm.dll").FileVersion;
-            string lcVersion = FileVersionInfo.GetVersionInfo("leechcore.dll").FileVersion;
-            string versions = $"Vmm Version: {vmmVersion}\n" +
-                $"Leechcore Version: {lcVersion}";
-            string[] initArgs = new[] {
-                "-norefresh",
-                "-device",
-                fpgaAlgo is FpgaAlgo.Auto ?
-                    "fpga" : $"fpga://algo={(int)fpgaAlgo}",
-                "-waitinitialize"};
             try
             {
-                /// Begin Init...
-                if (useMemMap)
-                {
-                    if (!File.Exists(_mmap))
-                    {
-                        DebugLogger.LogDebug("[DMA] No MemMap, attempting to generate...");
-                        _vmm = new Vmm(args: initArgs)
-                        {
-                            EnableMemoryWriting = true
-                        };
-                        _ = _vmm.GetMemoryMap(
-                            applyMap: true,
-                            outputFile: _mmap);
-                    }
-                    else
-                    {
-                        var mapArgs = new[] { "-memmap", _mmap };
-                        initArgs = initArgs.Concat(mapArgs).ToArray();
-                    }
-                }
-                _vmm ??= new Vmm(args: initArgs)
-                {
-                    EnableMemoryWriting = true
-                };
-                _vmm.RegisterAutoRefresh(RefreshOption.MemoryPartial, TimeSpan.FromMilliseconds(300));
-                _vmm.RegisterAutoRefresh(RefreshOption.TlbPartial, TimeSpan.FromSeconds(2));
+                FpgaAlgo fpgaAlgo = App.Config.DMA.FpgaAlgo;
+                bool useMemMap = App.Config.DMA.MemMapEnabled;
+                DebugLogger.LogDebug("Initializing DMA...");
+                /// Check MemProcFS Versions...
+                string vmmVersion = FileVersionInfo.GetVersionInfo("vmm.dll").FileVersion;
+                string lcVersion = FileVersionInfo.GetVersionInfo("leechcore.dll").FileVersion;
+                string versions = $"Vmm Version: {vmmVersion}\n" +
+                    $"Leechcore Version: {lcVersion}";
+                string[] initArgs = new[] {
+                    "-norefresh",
+                    "-device",
+                    fpgaAlgo is FpgaAlgo.Auto ?
+                        "fpga" : $"fpga://algo={(int)fpgaAlgo}",
+                    "-waitinitialize"};
                 try
                 {
-                    _input = new(_vmm);
+                    /// Begin Init...
+                    if (useMemMap)
+                    {
+                        if (!File.Exists(_mmap))
+                        {
+                            DebugLogger.LogDebug("[DMA] No MemMap, attempting to generate...");
+                            _vmm = new Vmm(args: initArgs)
+                            {
+                                EnableMemoryWriting = true
+                            };
+                            _ = _vmm.GetMemoryMap(
+                                applyMap: true,
+                                outputFile: _mmap);
+                        }
+                        else
+                        {
+                            var mapArgs = new[] { "-memmap", _mmap };
+                            initArgs = initArgs.Concat(mapArgs).ToArray();
+                        }
+                    }
+                    _vmm ??= new Vmm(args: initArgs)
+                    {
+                        EnableMemoryWriting = true
+                    };
+                    _vmm.RegisterAutoRefresh(RefreshOption.MemoryPartial, TimeSpan.FromMilliseconds(300));
+                    _vmm.RegisterAutoRefresh(RefreshOption.TlbPartial, TimeSpan.FromSeconds(2));
+                    try
+                    {
+                        _input = new(_vmm);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(
+                            messageBoxText: $"WARNING: Failed to initialize InputManager (win32). Please note, this only works on Windows 11 (Game PC). Startup will continue without hotkeys.\n\n{ex}",
+                            caption: App.Name,
+                            button: MessageBoxButton.OK,
+                            icon: MessageBoxImage.Warning,
+                            defaultResult: MessageBoxResult.OK,
+                            options: MessageBoxOptions.DefaultDesktopOnly);
+                    }
+                    ProcessStopped += Memory_ProcessStopped;
+                    RaidStopped += Memory_RaidStopped;
+                    // Start Memory Thread after successful startup
+                    new Thread(MemoryPrimaryWorker)
+                    {
+                        IsBackground = true
+                    }.Start();
+                    return Task.CompletedTask;
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(
-                        messageBoxText: $"WARNING: Failed to initialize InputManager (win32). Please note, this only works on Windows 11 (Game PC). Startup will continue without hotkeys.\n\n{ex}",
-                        caption: App.Name,
-                        button: MessageBoxButton.OK,
-                        icon: MessageBoxImage.Warning,
-                        defaultResult: MessageBoxResult.OK,
-                        options: MessageBoxOptions.DefaultDesktopOnly);
+                    throw new InvalidOperationException(
+                    "DMA Initialization Failed!\n" +
+                    $"Reason: {ex.Message}\n" +
+                    $"{versions}\n\n" +
+                    "===TROUBLESHOOTING===\n" +
+                    "1. Reboot both your Game PC / Radar PC (This USUALLY fixes it).\n" +
+                    "2. Reseat all cables/connections and make sure they are secure.\n" +
+                    "3. Changed Hardware/Operating System on Game PC? Reset your DMA Config ('Options' menu in Client) and try again.\n" +
+                    "4. Make sure all Setup Steps are completed (See DMA Setup Guide/FAQ for additional troubleshooting).\n\n" +
+                    "PLEASE REVIEW THE ABOVE BEFORE CONTACTING SUPPORT!");
                 }
-                ProcessStopped += MemDMA_ProcessStopped;
-                RaidStopped += MemDMA_RaidStopped;
-                // Start Memory Thread after successful startup
-                new Thread(MemoryPrimaryWorker)
-                {
-                    IsBackground = true
-                }.Start();
             }
-            catch (Exception ex)
+            catch
             {
-                throw new InvalidOperationException(
-                "DMA Initialization Failed!\n" +
-                $"Reason: {ex.Message}\n" +
-                $"{versions}\n\n" +
-                "===TROUBLESHOOTING===\n" +
-                "1. Reboot both your Game PC / Radar PC (This USUALLY fixes it).\n" +
-                "2. Reseat all cables/connections and make sure they are secure.\n" +
-                "3. Changed Hardware/Operating System on Game PC? Reset your DMA Config ('Options' menu in Client) and try again.\n" +
-                "4. Make sure all Setup Steps are completed (See DMA Setup Guide/FAQ for additional troubleshooting).\n\n" +
-                "PLEASE REVIEW THE ABOVE BEFORE CONTACTING SUPPORT!");
+                return Task.CompletedTask;
             }
         }
 
         /// <summary>
         /// Main worker thread to perform DMA Reads on.
         /// </summary>
-        private void MemoryPrimaryWorker()
+        private static void MemoryPrimaryWorker()
         {
             DebugLogger.LogDebug("Memory thread starting...");
             while (MainWindow.Instance is null)
@@ -175,8 +188,7 @@ namespace LoneEftDmaRadar.DMA
                         OnProcessStarted();
                         try
                         {
-                            _deviceAimbot = new DeviceAimbot(this);
-                            DeviceAimbot = _deviceAimbot;
+                            _deviceAimbot = new DeviceAimbot();
                         }
                         catch (Exception ex)
                         {
@@ -199,19 +211,19 @@ namespace LoneEftDmaRadar.DMA
 
         #region Restart Radar
 
-        private readonly Lock _restartSync = new();
-        private CancellationTokenSource _cts = new();
+        private static readonly Lock _restartSync = new();
+        private static CancellationTokenSource _cts = new();
 
         /// <summary>
         /// Signal the Radar to restart the raid/game loop.
         /// </summary>
-        public void RestartRadar()
+        public static void RestartRadar()
         {
             lock (_restartSync)
             {
-                _cts.Cancel();
-                _cts.Dispose();
-                _cts = new();
+                var old = Interlocked.Exchange(ref _cts, new());
+                old.Cancel();
+                old.Dispose();
             }
         }
 
@@ -223,7 +235,7 @@ namespace LoneEftDmaRadar.DMA
         /// Starts up the Game Process and all mandatory modules.
         /// Returns to caller when the Game is ready.
         /// </summary>
-        private void RunStartupLoop()
+        private static void RunStartupLoop()
         {
             DebugLogger.LogDebug("New Process Startup");
             while (true) // Startup loop
@@ -234,9 +246,9 @@ namespace LoneEftDmaRadar.DMA
                     ResourceJanitor.Run();
                     LoadProcess();
                     LoadModules();
-                    this.Starting = true;
+                    Starting = true;
                     OnProcessStarting();
-                    this.Ready = true;
+                    Ready = true;
                     DebugLogger.LogDebug("Process Startup [OK]");
                     break;
                 }
@@ -253,7 +265,7 @@ namespace LoneEftDmaRadar.DMA
         /// Main Game Loop Method.
         /// Returns to caller when Game is no longer running.
         /// </summary>
-        private void RunGameLoop()
+        private static void RunGameLoop()
         {
             while (true)
             {
@@ -282,12 +294,12 @@ namespace LoneEftDmaRadar.DMA
                                 {
                                     CameraManager = new CameraManager();
                                     CameraManager.UpdateViewportRes();
-                                    DebugLogger.LogDebug("[MemDMA] CameraManager initialized for raid");
+                                    DebugLogger.LogDebug("[Memory] CameraManager initialized for raid");
                                     cameraInitStart = DateTime.UtcNow;
                                 }
                                 catch (Exception ex)
                                 {
-                                    DebugLogger.LogDebug($"[MemDMA] CameraManager init failed, will retry: {ex.Message}");
+                                    DebugLogger.LogDebug($"[Memory] CameraManager init failed, will retry: {ex.Message}");
                                     nextCameraAttempt = DateTime.UtcNow.Add(retryInterval);
                                 }
                             }
@@ -298,7 +310,7 @@ namespace LoneEftDmaRadar.DMA
 
                                 if (DateTime.UtcNow - cameraInitStart > cameraInitTimeout)
                                 {
-                                    DebugLogger.LogDebug("[MemDMA] CameraManager still not initialized, retrying...");
+                                    DebugLogger.LogDebug("[Memory] CameraManager still not initialized, retrying...");
                                     CameraManager.Reset();
                                     CameraManager = null;
                                     nextCameraAttempt = DateTime.UtcNow.Add(retryInterval);
@@ -340,21 +352,20 @@ namespace LoneEftDmaRadar.DMA
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
-        private void MemDMA_ProcessStopped(object sender, EventArgs e)
+        private static void Memory_ProcessStopped(object sender, EventArgs e)
         {
-            this.Starting = default;
-            this.Ready = default;
+            Starting = default;
+            Ready = default;
             UnityBase = default;
             GOM = default;
             _pid = default;
             _deviceAimbot?.Dispose();
             _deviceAimbot = null;
-            DeviceAimbot = null;
             CameraManager = null;
         }
 
 
-        private void MemDMA_RaidStopped(object sender, EventArgs e)
+        private static void Memory_RaidStopped(object sender, EventArgs e)
         {
             Game = null;
             _deviceAimbot?.OnRaidEnd();
@@ -363,7 +374,7 @@ namespace LoneEftDmaRadar.DMA
         /// <summary>
         /// Obtain the PID for the Game Process.
         /// </summary>
-        private void LoadProcess()
+        private static void LoadProcess()
         {
 
             if (!_vmm.PidGetFromName(GAME_PROCESS_NAME, out uint pid))
@@ -374,10 +385,10 @@ namespace LoneEftDmaRadar.DMA
         /// <summary>
         /// Gets the Game Process Base Module Addresses.
         /// </summary>
-        private void LoadModules()
+        private static void LoadModules()
         {
             var unityBase = _vmm.ProcessGetModuleBase(_pid, "UnityPlayer.dll");
-            unityBase.ThrowIfInvalidVirtualAddress(nameof(unityBase));
+            unityBase.ThrowIfInvalidUserVA(nameof(unityBase));
             GOM = GameObjectManager.GetAddr(unityBase);
             UnityBase = unityBase;
         }
@@ -460,7 +471,7 @@ namespace LoneEftDmaRadar.DMA
         /// Prefetch pages into the cache.
         /// </summary>
         /// <param name="va"></param>
-        public void ReadCache(params ulong[] va)
+        public static void ReadCache(params ulong[] va)
         {
             _vmm.MemPrefetchPages(_pid, va);
         }
@@ -472,7 +483,7 @@ namespace LoneEftDmaRadar.DMA
         /// <param name="addr">Virtual Address to read from.</param>
         /// <param name="span">Buffer to receive memory read in.</param>
         /// <param name="useCache">Use caching for this read.</param>
-        public void ReadSpan<T>(ulong addr, Span<T> span, bool useCache = true)
+        public static void ReadSpan<T>(ulong addr, Span<T> span, bool useCache = true)
             where T : unmanaged
         {
             uint cb = (uint)checked(Unsafe.SizeOf<T>() * span.Length);
@@ -489,7 +500,7 @@ namespace LoneEftDmaRadar.DMA
         /// <typeparam name="T">Value Type <typeparamref name="T"/></typeparam>
         /// <param name="addr">Virtual Address to read from.</param>
         /// <param name="span">Buffer to receive memory read in.</param>
-        public void ReadSpanEnsure<T>(ulong addr, Span<T> span)
+        public static void ReadSpanEnsure<T>(ulong addr, Span<T> span)
             where T : unmanaged
         {
             uint cb = (uint)checked(Unsafe.SizeOf<T>() * span.Length);
@@ -519,12 +530,12 @@ namespace LoneEftDmaRadar.DMA
         /// <param name="addr">Address to read from.</param>
         /// <param name="count">Number of array elements to read.</param>
         /// <param name="useCache">Use caching for this read.</param>
-        /// <returns><see cref="PooledMemory{T}"/> value. Be sure to call <see cref="IDisposable.Dispose"/>!</returns>
-        public PooledMemory<T> ReadArray<T>(ulong addr, int count, bool useCache = true)
+        /// <returns><see cref="IMemoryOwner{T}"/> value. Be sure to call <see cref="IDisposable.Dispose"/>!</returns>
+        public static IMemoryOwner<T> ReadPooled<T>(ulong addr, int count, bool useCache = true)
             where T : unmanaged
         {
             var flags = useCache ? VmmFlags.NONE : VmmFlags.NOCACHE;
-            var arr = _vmm.MemReadArray<T>(_pid, addr, count, flags) ??
+            var arr = _vmm.MemReadPooled<T>(_pid, addr, count, flags) ??
                 throw new VmmException("Memory Read Failed!");
             return arr;
         }
@@ -537,7 +548,7 @@ namespace LoneEftDmaRadar.DMA
         /// <param name="useCache">Use caching for this read (recommended).</param>
         /// <param name="offsets">Offsets to read in succession.</param>
         /// <returns>Pointer address after final offset.</returns>
-        public ulong ReadPtrChain(ulong addr, bool useCache, params Span<uint> offsets)
+        public static ulong ReadPtrChain(ulong addr, bool useCache, params Span<uint> offsets)
         {
             ulong pointer = addr;
             foreach (var offset in offsets)
@@ -550,10 +561,10 @@ namespace LoneEftDmaRadar.DMA
         /// <summary>
         /// Resolves a pointer and returns the memory address it points to.
         /// </summary>
-        public ulong ReadPtr(ulong addr, bool useCache = true)
+        public static ulong ReadPtr(ulong addr, bool useCache = true)
         {
             var pointer = ReadValue<VmmPointer>(addr, useCache);
-            pointer.ThrowIfInvalid();
+            pointer.ThrowIfInvalidUserVA();
             return pointer;
         }
 
@@ -562,13 +573,12 @@ namespace LoneEftDmaRadar.DMA
         /// </summary>
         /// <typeparam name="T">Specified Value Type.</typeparam>
         /// <param name="addr">Address to read from.</param>
-        public T ReadValue<T>(ulong addr, bool useCache = true)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static T ReadValue<T>(ulong addr, bool useCache = true)
             where T : unmanaged, allows ref struct
         {
             var flags = useCache ? VmmFlags.NONE : VmmFlags.NOCACHE;
-            if (!_vmm.MemReadValue<T>(_pid, addr, out var result, flags))
-                throw new VmmException("Memory Read Failed!");
-            return result;
+            return _vmm.MemReadValue<T>(_pid, addr, flags);
         }
 
         /// <summary>
@@ -576,18 +586,15 @@ namespace LoneEftDmaRadar.DMA
         /// </summary>
         /// <typeparam name="T">Specified Value Type.</typeparam>
         /// <param name="addr">Address to read from.</param>
-        public unsafe T ReadValueEnsure<T>(ulong addr)
+        public static unsafe T ReadValueEnsure<T>(ulong addr)
             where T : unmanaged, allows ref struct
         {
             int cb = Unsafe.SizeOf<T>();
-            if (!_vmm.MemReadValue<T>(_pid, addr, out var r1, VmmFlags.NOCACHE))
-                throw new VmmException("Memory Read Failed!");
+            T r1 = _vmm.MemReadValue<T>(_pid, addr, VmmFlags.NOCACHE);
             Thread.SpinWait(5);
-            if (!_vmm.MemReadValue<T>(_pid, addr, out var r2, VmmFlags.NOCACHE))
-                throw new VmmException("Memory Read Failed!");
+            T r2 = _vmm.MemReadValue<T>(_pid, addr, VmmFlags.NOCACHE);
             Thread.SpinWait(5);
-            if (!_vmm.MemReadValue<T>(_pid, addr, out var r3, VmmFlags.NOCACHE))
-                throw new VmmException("Memory Read Failed!");
+            T r3 = _vmm.MemReadValue<T>(_pid, addr, VmmFlags.NOCACHE);
             var b1 = new ReadOnlySpan<byte>(&r1, cb);
             var b2 = new ReadOnlySpan<byte>(&r2, cb);
             var b3 = new ReadOnlySpan<byte>(&r3, cb);
@@ -601,7 +608,7 @@ namespace LoneEftDmaRadar.DMA
         /// <summary>
         /// Read null terminated UTF8 string.
         /// </summary>
-        public string ReadUtf8String(ulong addr, int cb, bool useCache = true) // read n bytes (string)
+        public static string ReadUtf8String(ulong addr, int cb, bool useCache = true) // read n bytes (string)
         {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(cb, 0x1000, nameof(cb));
             var flags = useCache ? VmmFlags.NONE : VmmFlags.NOCACHE;
@@ -612,7 +619,7 @@ namespace LoneEftDmaRadar.DMA
         /// <summary>
         /// Read null terminated Unicode string.
         /// </summary>
-        public string ReadUnicodeString(ulong addr, int cb = 128, bool useCache = true)
+        public static string ReadUnicodeString(ulong addr, int cb = 128, bool useCache = true)
         {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(cb, 0x1000, nameof(cb));
             var flags = useCache ? VmmFlags.NONE : VmmFlags.NOCACHE;
@@ -623,7 +630,7 @@ namespace LoneEftDmaRadar.DMA
         /// <summary>
         /// Read null terminated Unity string (Unicode Encoding).
         /// </summary>
-        public string ReadUnityString(ulong addr, int cb = 128, bool useCache = true)
+        public static string ReadUnityString(ulong addr, int cb = 128, bool useCache = true)
         {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(cb, 0x1000, nameof(cb));
             var flags = useCache ? VmmFlags.NONE : VmmFlags.NOCACHE;
@@ -634,7 +641,7 @@ namespace LoneEftDmaRadar.DMA
         /// <summary>
         /// Write a value type to memory.
         /// </summary>
-        public void WriteValue<T>(ulong addr, in T value, bool useCache = false)
+        public static void WriteValue<T>(ulong addr, in T value, bool useCache = false)
             where T : unmanaged
         {
             // VmmSharpEx write calls do not expose cache flags; writes are always uncached.
@@ -651,7 +658,7 @@ namespace LoneEftDmaRadar.DMA
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public VmmScatterMap CreateScatterMap() =>
+        public static VmmScatterMap CreateScatterMap() =>
             _vmm.CreateScatterMap(_pid);
 
         /// <summary>
@@ -660,23 +667,20 @@ namespace LoneEftDmaRadar.DMA
         /// <param name="flags"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public VmmScatter CreateScatter(VmmFlags flags = VmmFlags.NONE) =>
+        public static VmmScatter CreateScatter(VmmFlags flags = VmmFlags.NONE) =>
             _vmm.CreateScatter(_pid, flags);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ulong FindSignature(string signature)
+        public static ulong FindSignature(string signature)
         {
-
-            if (!_vmm.Map_GetModuleFromName(_pid, "UnityPlayer.dll", out var info))
-                throw new VmmException("Failed to get process information.");
-            return _vmm.FindSignature(_pid, signature, info.vaBase, info.vaBase + info.cbImageSize);
+            return _vmm.FindSignature(_pid, signature, "UnityPlayer.dll");
         }
 
         /// <summary>
         /// Throws a special exception if no longer in game.
         /// </summary>
         /// <exception cref="ProcessNotRunningException"></exception>
-        public void ThrowIfProcessNotRunning()
+        public static void ThrowIfProcessNotRunning()
         {
             _vmm.ForceFullRefresh();
             for (int i = 0; i < 5; i++)
@@ -709,17 +713,6 @@ namespace LoneEftDmaRadar.DMA
         #endregion
 
         #region Memory Macros
-
-        /// <summary>
-        /// Checks if a Virtual Address is valid.
-        /// </summary>
-        /// <param name="va">Virtual Address to validate.</param>
-        /// <returns>True if valid, otherwise False.</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsValidVirtualAddress(ulong va)
-        {
-            return va >= 0x10000 && ((long)va << 16) >> 16 == (long)va;
-        }
 
         /// <summary>
         /// The PAGE_ALIGN macro returns a page-aligned virtual address for a given virtual address.
@@ -764,20 +757,6 @@ namespace LoneEftDmaRadar.DMA
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ulong AlignAddress(ulong address) => (address + 7) & ~7ul;
-
-        #endregion
-
-        #region IDisposable
-
-        private bool _disposed;
-        public void Dispose()
-        {
-            if (Interlocked.Exchange(ref _disposed, true) == false)
-            {
-                _deviceAimbot?.Dispose();
-                _vmm.Dispose();
-            }
-        }
 
         #endregion
     }

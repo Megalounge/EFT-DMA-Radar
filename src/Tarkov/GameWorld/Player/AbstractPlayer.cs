@@ -27,7 +27,6 @@ SOFTWARE.
 */
 
 using Collections.Pooled;
-using LoneEftDmaRadar.DMA;
 using LoneEftDmaRadar.Misc;
 using LoneEftDmaRadar.Tarkov.GameWorld.Loot;
 using LoneEftDmaRadar.Tarkov.GameWorld.Loot.Helpers;
@@ -41,6 +40,7 @@ using LoneEftDmaRadar.UI.Skia;
 using LoneEftDmaRadar.Web.TarkovDev.Data;
 using VmmSharpEx.Scatter;
 using static LoneEftDmaRadar.Tarkov.Unity.Structures.UnityTransform;
+using System.Buffers;
 
 namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
 {
@@ -58,10 +58,10 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
 
         static AbstractPlayer()
         {
-            MemDMA.RaidStopped += MemDMA_RaidStopped;
+            Memory.RaidStopped += Memory_RaidStopped;
         }
 
-        private static void MemDMA_RaidStopped(object sender, EventArgs e)
+        private static void Memory_RaidStopped(object sender, EventArgs e)
         {
             _groups.Clear();
             _lastGroupNumber = default;
@@ -577,17 +577,17 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
                 bool successRot = s.ReadValue<Vector2>(RotationAddress, out var rotation) && SetRotation(rotation);
                 bool successPos = false;
 
-                if (s.ReadArray<TrsX>(SkeletonRoot.VerticesAddr, requestedVertices) is PooledMemory<TrsX> vertices)
+                if (s.ReadPooled<TrsX>(SkeletonRoot.VerticesAddr, requestedVertices) is IMemoryOwner<TrsX> vertices)
                 {
                     using (vertices)
                     {
                         try
                         {
-                            if (vertices.Span.Length >= requestedVertices)
+                            if (vertices.Memory.Span.Length >= requestedVertices)
                             {
                                 try
                                 {
-                                    _ = SkeletonRoot.UpdatePosition(vertices.Span);
+                                    _ = SkeletonRoot.UpdatePosition(vertices.Memory.Span);
                                     successPos = true;
                                 }
                                 catch (Exception ex)
@@ -601,13 +601,13 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
                                 {
                                     try
                                     {
-                                        if (bonePair.Value.Count <= vertices.Span.Length)
+                                        if (bonePair.Value.Count <= vertices.Memory.Span.Length)
                                         {
-                                            bonePair.Value.UpdatePosition(vertices.Span);
+                                            bonePair.Value.UpdatePosition(vertices.Memory.Span);
                                         }
                                         else
                                         {
-                                            DebugLogger.LogDebug($"Bone '{bonePair.Key}' needs {bonePair.Value.Count} vertices but only {vertices.Span.Length} available for '{Name}'");
+                                            DebugLogger.LogDebug($"Bone '{bonePair.Key}' needs {bonePair.Value.Count} vertices but only {vertices.Memory.Span.Length} available for '{Name}'");
                                             ResetBoneTransform(bonePair.Key);
                                         }
                                     }
@@ -628,7 +628,7 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
                             }
                             else
                             {
-                                DebugLogger.LogDebug($"Insufficient vertices for '{Name}': got {vertices.Span.Length}, expected {requestedVertices}");
+                                DebugLogger.LogDebug($"Insufficient vertices for '{Name}': got {vertices.Memory.Span.Length}, expected {requestedVertices}");
                                 _verticesCount = 0;
                                 successPos = false;
                             }
