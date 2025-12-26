@@ -210,7 +210,7 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
             }
             else if (IsPmc)
             {
-                Name = $"PMC{GetPlayerId()}";
+                Name = $"{PlayerSide.ToString().ToUpper()}{GetPlayerId()}";
                 Type = IsTempTeammate(this) || (GroupID != -1 && GroupID == localPlayer.GroupID) ?
                     PlayerType.Teammate : PlayerType.PMC;
             }
