@@ -603,6 +603,7 @@ namespace LoneEftDmaRadar.UI.ESP
 
             var camPos = localPlayer?.Position ?? Vector3.Zero;
             float maxDistance = App.Config.UI.EspGrenadeMaxDistance;
+            var grenadeColor = GetGrenadeColorForRender();
 
             foreach (var explosive in Explosives)
             {
@@ -614,7 +615,6 @@ namespace LoneEftDmaRadar.UI.ESP
                     if (grenade.Position == Vector3.Zero)
                         continue;
 
-                    // Check distance to grenade
                     float distance = Vector3.Distance(camPos, grenade.Position);
                     if (maxDistance > 0 && distance > maxDistance)
                         continue;
@@ -622,12 +622,69 @@ namespace LoneEftDmaRadar.UI.ESP
                     if (!CameraManager.WorldToScreenWithScale(grenade.Position, out var screen, out float scale, true, true))
                         continue;
 
-                    var color = GetGrenadeColorForRender();
+                    // Draw blast radius circle
+                    if (App.Config.UI.EspGrenadeBlastRadius)
+                    {
+                        float blastRadiusWorld = 5f; // blast radius data should be read from memory or some other sources, for now it's hardcoded
+                        const int segments = 32;
+                        var blastColor = ToColor(new SKColor(
+                            grenadeColor.R, grenadeColor.G, grenadeColor.B, 255));
+
+                        var circlePoints = new List<SKPoint>();
+                        for (int i = 0; i <= segments; i++)
+                        {
+                            float angle = (i / (float)segments) * MathF.PI * 2;
+                            var offset = new Vector3(
+                                MathF.Cos(angle) * blastRadiusWorld,
+                                0,
+                                MathF.Sin(angle) * blastRadiusWorld);
+                            var worldPos = grenade.Position + offset;
+
+                            if (CameraManager.WorldToScreenWithScale(worldPos, out var screenPos, out _, true, true))
+                            {
+                                circlePoints.Add(screenPos);
+                            }
+                        }
+
+                        // Draw line segments between points
+                        for (int i = 0; i < circlePoints.Count - 1; i++)
+                        {
+                            ctx.DrawLine(ToRaw(circlePoints[i]), ToRaw(circlePoints[i + 1]), blastColor, 2f);
+                        }
+                    }
+
+                    // Draw trail
+                    if (App.Config.UI.EspGrenadeTrail && grenade.PositionHistory.Count > 1)
+                    {
+                        var trailColor = ToColor(new SKColor(
+                            grenadeColor.R, grenadeColor.G, grenadeColor.B, 255));
+
+                        var screenPoints = new List<SKPoint>();
+                        foreach (var pos in grenade.PositionHistory)
+                        {
+                            if (pos == Vector3.Zero)
+                                continue;
+                            if (CameraManager.WorldToScreenWithScale(pos, out var posScreen, out _, true, true))
+                            {
+                                screenPoints.Add(posScreen);
+                            }
+                        }
+
+                        // Draw trail segments with increasing thickness
+                        for (int i = 0; i < screenPoints.Count - 1; i++)
+                        {
+                            float progress = (float)i / (screenPoints.Count - 1);
+                            float thickness = 0.5f + (progress * 3.5f); // 0.5f to 4f
+
+                            ctx.DrawLine(ToRaw(screenPoints[i]), ToRaw(screenPoints[i + 1]), trailColor, thickness);
+                        }
+                    }
+
                     float radius = Math.Clamp(5f * App.Config.UI.UIScale * scale, 3f, 20f);
-                    ctx.DrawCircle(ToRaw(screen), radius, color, true);
+                    ctx.DrawCircle(ToRaw(screen), radius, grenadeColor, true);
 
                     DxTextSize textSize = scale > 1.5f ? DxTextSize.Medium : DxTextSize.Small;
-                    ctx.DrawText("Grenade", screen.X + radius + 6, screen.Y, color, textSize);
+                    ctx.DrawText("Grenade", screen.X + radius + 6, screen.Y, grenadeColor, textSize);
                 }
                 catch
                 {

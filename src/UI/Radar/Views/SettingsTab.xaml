@@ -25,8 +25,8 @@
                     <TextBlock TextWrapping="Wrap"
                                Margin="0,0,0,12"
                                FontStyle="Italic">
-Zoom In: F1 / Mouse Wheel Up<LineBreak />
-Zoom Out: F2 / Mouse Wheel Down<LineBreak />
+Zoom In: F1 / Mouse Wheel Up 
+Zoom Out: F2 / Mouse Wheel Down 
 Toggle Fullscreen: F11
                     </TextBlock>
 
@@ -206,7 +206,7 @@ Toggle Fullscreen: F11
                               Margin="0,0,8,0" />
                     <ListBox ItemsSource="{Binding CurrentQuests}"
                              IsEnabled="{Binding QuestHelperEnabled}"
-                             Height="250"
+                             Height="400"
                              ToolTip="Active Quest List (populates once you are in raid). Uncheck a quest to untrack it."
                              ScrollViewer.CanContentScroll="True">
 

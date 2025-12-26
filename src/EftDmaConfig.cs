@@ -498,6 +498,24 @@ namespace LoneEftDmaRadar
         public float EspGrenadeMaxDistance { get; set; } = 0f;
 
         /// <summary>
+        /// Show grenade trail on ESP.
+        /// </summary>
+        [JsonPropertyName("espGrenadeTrail")]
+        public bool EspGrenadeTrail { get; set; } = true;
+
+        /// <summary>
+        /// Number of position history points to track for grenade trail.
+        /// </summary>
+        [JsonPropertyName("espGrenadeTrailLength")]
+        public int EspGrenadeTrailLength { get; set; } = 50;
+
+        /// <summary>
+        /// Show grenade blast radius circle on ESP.
+        /// </summary>
+        [JsonPropertyName("espGrenadeBlastRadius")]
+        public bool EspGrenadeBlastRadius { get; set; } = true;
+
+        /// <summary>
         /// Show Loot on ESP.
         /// </summary>
         [JsonPropertyName("espLoot")]
