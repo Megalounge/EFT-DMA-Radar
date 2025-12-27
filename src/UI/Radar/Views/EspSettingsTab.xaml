@@ -385,6 +385,20 @@
                         <TextBox Width="50" Text="{Binding MiniRadarScreenY, Mode=TwoWay}"/>
                         <TextBlock Text="(-1 X = Auto Top-Right)" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="Gray" FontSize="10"/>
                     </WrapPanel>
+                    
+                    <WrapPanel Margin="0,0,0,8" IsEnabled="{Binding MiniRadarEnabled}">
+                        <CheckBox Content="Self Lock (Player Centered)" IsChecked="{Binding MiniRadarSelfLock, Mode=TwoWay}" Margin="0,0,16,0" ToolTip="Keep local player centered on the mini radar"/>
+                        <TextBlock Text="Zoom:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <Slider x:Name="MiniRadarZoomSlider" 
+                                Width="120" 
+                                Minimum="0.5" 
+                                Maximum="10" 
+                                Value="{Binding MiniRadarZoomLevel, Mode=TwoWay}" 
+                                SmallChange="0.5" 
+                                LargeChange="1"
+                                IsEnabled="{Binding MiniRadarSelfLock}"/>
+                        <TextBlock Text="{Binding Value, ElementName=MiniRadarZoomSlider, StringFormat='{}{0:F1}x'}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    </WrapPanel>
 
                     <TextBlock Text="Visibility Layers" FontWeight="SemiBold" Margin="0,4,0,4" IsEnabled="{Binding MiniRadarEnabled}"/>
                     <WrapPanel IsEnabled="{Binding MiniRadarEnabled}">
