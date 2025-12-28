@@ -373,7 +373,7 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
                 return;
             }
 
-            const float GuardDetectionDistance = 5.0f;
+            const float GuardDetectionDistance = 10.0f;
             float thresholdSq = GuardDetectionDistance * GuardDetectionDistance;
 
             var bosses = allPlayers.Where(p => p.Type == PlayerType.AIBoss && p.IsActive && p.IsAlive).ToList();

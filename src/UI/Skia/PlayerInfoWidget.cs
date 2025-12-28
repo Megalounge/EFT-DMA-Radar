@@ -59,8 +59,8 @@ namespace LoneEftDmaRadar.UI.Skia
 
             static string MakeRow(string name, string grp, string hands, string secure, string value, string dist)
             {
-                // Column widths: Name (8), Grp (4), Hands (10), Secure (6), Value (6), Dist (4)
-                const int W_NAME = 8, W_GRP = 4, W_HANDS = 10, W_SECURE = 6, W_VALUE = 6, W_DIST = 4;
+                // Column widths: Name (8), Grp (4), Hands (12), Secure (8), Value (6), Dist (5)
+                const int W_NAME = 8, W_GRP = 4, W_HANDS = 12, W_SECURE = 8, W_VALUE = 6, W_DIST = 5;
                 const int len = W_NAME + W_GRP + W_HANDS + W_SECURE + W_VALUE + W_DIST;
 
                 return string.Create(len, (name, grp, hands, secure, value, dist), static (span, cols) =>
@@ -131,10 +131,10 @@ namespace LoneEftDmaRadar.UI.Skia
 
                 if (player is ObservedPlayer obs)
                 {
-                    hands = Truncate(obs.Equipment?.InHands?.ShortName ?? "--", 10);
-                    secure = Truncate(obs.Equipment?.SecuredContainer?.ShortName ?? "--", 6);
+                    hands = Truncate(obs.Equipment?.InHands?.ShortName ?? "--", 15);
+                    secure = Truncate(obs.Equipment?.SecuredContainer?.ShortName ?? "--", 8);
                     value = Truncate(Utilities.FormatNumberKM(obs.Equipment?.Value ?? 0), 6);
-                    dist = Truncate(((int)Vector3.Distance(player.Position, localPos)).ToString(), 4);
+                    dist = Truncate(((int)Vector3.Distance(player.Position, localPos)).ToString(), 6);
                 }
 
                 string line = MakeRow(name, grp, hands, secure, value, dist);
