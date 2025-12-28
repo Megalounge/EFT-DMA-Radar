@@ -46,6 +46,9 @@ namespace LoneEftDmaRadar.Web.TarkovDev.Data
             [JsonPropertyName("maps")]
             public List<object> Maps { get; set; }
 
+            [JsonPropertyName("playerLevels")]
+            public List<object> PlayerLevels { get; set; }
+
             [JsonPropertyName("tasks")]
             public List<object> Tasks { get; set; }
         }
