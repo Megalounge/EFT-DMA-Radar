@@ -1720,6 +1720,7 @@ namespace LoneEftDmaRadar.UI.ESP
             var ui = App.Config.UI;
             _dxOverlay?.SetFontConfig(
                 ui.EspFontFamily,
+                ui.EspFontWeight,
                 ui.EspFontSizeSmall,
                 ui.EspFontSizeMedium,
                 ui.EspFontSizeLarge);

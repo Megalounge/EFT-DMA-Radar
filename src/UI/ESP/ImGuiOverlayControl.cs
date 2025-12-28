@@ -44,6 +44,7 @@ namespace LoneEftDmaRadar.UI.ESP
 
         // Font Configuration
         private string _fontFamily = "Segoe UI";
+        private string _fontWeight = "Regular";
         private int _fontSizeSmall = 15;
         private int _fontSizeMedium = 18;
         private int _fontSizeLarge = 32;
@@ -451,11 +452,18 @@ float4 main(PS_INPUT input) : SV_Target {
                 fontConfig->PixelSnapH = 0;
                 fontConfig->GlyphExtraSpacing = new Vector2(0.5f, 0);
 
+                // Set font weight multiplier based on weight setting
+                // RasterizerMultiply > 1.0 makes font bolder, < 1.0 makes it thinner
+                fontConfig->RasterizerMultiply = GetFontWeightMultiplier(_fontWeight);
+
                 IntPtr glyphRanges = BuildFullUnicodeRanges(io.Fonts);
 
                 try
                 {
-                    string fontPath = GetFontPath(_fontFamily);
+                    string fontPath = GetFontPath(_fontFamily, _fontWeight);
+
+                    io.Fonts.TexDesiredWidth = 4096;
+                    io.Fonts.Flags = ImFontAtlasFlags.NoPowerOfTwoHeight;
 
                     // Load fonts with configured sizes
                     _fontSmall = io.Fonts.AddFontFromFileTTF(fontPath, _fontSizeSmall, fontConfig, glyphRanges);
@@ -474,8 +482,6 @@ float4 main(PS_INPUT input) : SV_Target {
                     ImGuiNative.ImFontConfig_destroy(fontConfig);
                 }
             }
-
-            io.Fonts.TexDesiredWidth = 0;
 
             io.Fonts.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height);
 
@@ -501,6 +507,76 @@ float4 main(PS_INPUT input) : SV_Target {
 
             _fontTextureView = _device.CreateShaderResourceView(_fontTexture);
             io.Fonts.SetTexID(_fontTextureView.NativePointer);
+        }
+
+        private static float GetFontWeightMultiplier(string weight)
+        {
+            return weight.ToLowerInvariant() switch
+            {
+                "thin" => 0.7f,
+                "light" => 0.8f,
+                "regular" or "normal" or "default" => 1.0f,
+                "medium" => 1.1f,
+                "semibold" => 1.2f,
+                "bold" => 1.3f,
+                "extrabold" => 1.4f,
+                "black" or "heavy" => 1.5f,
+                _ => 1.0f
+            };
+        }
+
+        private static string GetFontPath(string fontFamily, string fontWeight)
+        {
+            string fontsDir = @"C:\Windows\Fonts";
+            if (!Directory.Exists(fontsDir))
+                return $@"C:\Windows\Fonts\segoeui.ttf";
+
+            string cleanName = fontFamily.Replace(" ", "").ToLowerInvariant();
+            string[] extensions = { ".ttc", ".ttf", ".otf" };
+
+            // Try exact match first
+            foreach (string ext in extensions)
+            {
+                string exactPath = Path.Combine(fontsDir, cleanName + ext);
+                if (File.Exists(exactPath))
+                    return exactPath;
+            }
+
+            // Search through font files for matching name
+            try
+            {
+                foreach (string file in Directory.GetFiles(fontsDir, "*.ttc"))
+                {
+                    string fileName = Path.GetFileNameWithoutExtension(file);
+                    if (fileName.Replace(" ", "").Equals(cleanName, StringComparison.OrdinalIgnoreCase))
+                        return file;
+                }
+
+                foreach (string file in Directory.GetFiles(fontsDir, "*.ttf"))
+                {
+                    string fileName = Path.GetFileNameWithoutExtension(file);
+                    if (fileName.Replace(" ", "").Equals(cleanName, StringComparison.OrdinalIgnoreCase))
+                        return file;
+                }
+
+                foreach (string file in Directory.GetFiles(fontsDir, "*.otf"))
+                {
+                    string fileName = Path.GetFileNameWithoutExtension(file);
+                    if (fileName.Replace(" ", "").Equals(cleanName, StringComparison.OrdinalIgnoreCase))
+                        return file;
+                }
+            }
+            catch
+            {
+                // Ignore directory access errors
+            }
+
+            return $@"C:\Windows\Fonts\segoeui.ttf";
+        }
+
+        private string GetFontPath(string fontFamily)
+        {
+            return GetFontPath(fontFamily, _fontWeight);
         }
 
         public void RequestMapTextureUpdate(int width, int height, byte[] pixels)
@@ -577,10 +653,18 @@ float4 main(PS_INPUT input) : SV_Target {
         
         public void SetFontConfig(string fontFamily, int small, int medium, int large)
         {
+            SetFontConfig(fontFamily, "Regular", small, medium, large);
+        }
+
+        public void SetFontConfig(string fontFamily, string fontWeight, int small, int medium, int large)
+        {
             lock (_deviceLock)
             {
                 if (!string.IsNullOrWhiteSpace(fontFamily))
                     _fontFamily = fontFamily.Trim();
+
+                if (!string.IsNullOrWhiteSpace(fontWeight))
+                    _fontWeight = fontWeight.Trim();
 
                 _fontSizeSmall = ClampFontSize(small);
                 _fontSizeMedium = ClampFontSize(medium);
@@ -619,7 +703,7 @@ float4 main(PS_INPUT input) : SV_Target {
             ushort* greekRanges = (ushort*)fonts.GetGlyphRangesGreek();
             ushort* koreanRanges = (ushort*)fonts.GetGlyphRangesKorean();
             ushort* japaneseRanges = (ushort*)fonts.GetGlyphRangesJapanese();
-            ushort* chineseRanges = (ushort*)fonts.GetGlyphRangesChineseSimplifiedCommon();
+            ushort* chineseRanges = (ushort*)fonts.GetGlyphRangesChineseFull();
             ushort* cyrillicRanges = (ushort*)fonts.GetGlyphRangesCyrillic();
             ushort* thaiRanges = (ushort*)fonts.GetGlyphRangesThai();
             ushort* vietnameseRanges = (ushort*)fonts.GetGlyphRangesVietnamese();
@@ -639,63 +723,6 @@ float4 main(PS_INPUT input) : SV_Target {
             ImGuiNative.ImFontGlyphRangesBuilder_destroy(builder);
 
             return resultRanges.Data;
-        }
-
-        private string GetFontPath(string fontFamily)
-        {
-            return FindFontFile(fontFamily) ?? $@"C:\Windows\Fonts\segoeui.ttf";
-        }
-
-        private static string FindFontFile(string fontFamily)
-        {
-            string fontsDir = @"C:\Windows\Fonts";
-
-            if (!Directory.Exists(fontsDir))
-                return null;
-
-            string cleanName = fontFamily.Replace(" ", "").ToLowerInvariant();
-            string[] extensions = { ".ttc", ".ttf", ".otf" };
-
-            foreach (string ext in extensions)
-            {
-                string exactPath = Path.Combine(fontsDir, cleanName + ext);
-                if (File.Exists(exactPath))
-                    return exactPath;
-
-                exactPath = Path.Combine(fontsDir, fontFamily.Replace(" ", "") + ext);
-                if (File.Exists(exactPath))
-                    return exactPath;
-            }
-
-            try
-            {
-                foreach (string file in Directory.GetFiles(fontsDir, "*.ttc"))
-                {
-                    string fileName = Path.GetFileNameWithoutExtension(file);
-                    if (fileName.Replace(" ", "").Equals(cleanName, StringComparison.OrdinalIgnoreCase))
-                        return file;
-                }
-
-                foreach (string file in Directory.GetFiles(fontsDir, "*.ttf"))
-                {
-                    string fileName = Path.GetFileNameWithoutExtension(file);
-                    if (fileName.Replace(" ", "").Equals(cleanName, StringComparison.OrdinalIgnoreCase))
-                        return file;
-                }
-
-                foreach (string file in Directory.GetFiles(fontsDir, "*.otf"))
-                {
-                    string fileName = Path.GetFileNameWithoutExtension(file);
-                    if (fileName.Replace(" ", "").Equals(cleanName, StringComparison.OrdinalIgnoreCase))
-                        return file;
-                }
-            }
-            catch
-            {
-                // Ignore directory access errors
-            }
-
-            return null;
         }
 
         protected override void Dispose(bool disposing)
