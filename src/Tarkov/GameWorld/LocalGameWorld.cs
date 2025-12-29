@@ -77,6 +77,12 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld
         public LootManager Loot { get; }
         public QuestManager QuestManager { get; }
 
+        /// <summary>
+        /// Tracks whether the raid has started (player has equipped hands).
+        /// Used to determine when to run pre-raid team detection.
+        /// </summary>
+        public bool RaidStarted { get; private set; }
+
         private LocalGameWorld() { }
 
         /// <summary>
@@ -320,6 +326,8 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld
             RefreshQuestHelper(ct);
             // Refresh Exfil Status
             RefreshExfils();
+            // Pre-raid team detection (only runs until raid starts)
+            PreRaidStartChecks(ct);
         }
 
         private void RefreshEquipment(CancellationToken ct)
@@ -354,6 +362,45 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld
             catch (Exception ex)
             {
                 DebugLogger.LogDebug($"[ExitManager] ERROR Refreshing: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// Executes pre-raid start checks to determine if the raid has started.
+        /// Runs team detection BEFORE raid starts (when hands are empty) for early team composition.
+        /// </summary>
+        /// <param name="ct">Cancellation token.</param>
+        private void PreRaidStartChecks(CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (RaidStarted || LocalPlayer is not LocalPlayer localPlayer)
+                return;
+
+            try
+            {
+                // Check if Hands controller has a valid class name
+                // When raid starts, hands transitions from "ClientEmptyHandsController" to the actual item
+                if (localPlayer.HandsController != 0)
+                {
+                    var handsTypeName = Unity.Structures.ObjectClass.ReadName(localPlayer.HandsController);
+                    bool hasEquippedHands = !string.IsNullOrWhiteSpace(handsTypeName) &&
+                                           handsTypeName != "ClientEmptyHandsController";
+
+                    if (hasEquippedHands)
+                    {
+                        RaidStarted = true;
+                        DebugLogger.LogDebug("[PreRaidStartChecks] Raid has started (hands equipped)!");
+                    }
+                    else if (!localPlayer.IsScav)
+                    {
+                        // Pre-raid window: detect teams while hands are still empty
+                        AbstractPlayer.DetectTeamsPreRaid(localPlayer, _rgtPlayers);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.LogDebug($"[PreRaidStartChecks] ERROR: {ex.Message}");
             }
         }
 
