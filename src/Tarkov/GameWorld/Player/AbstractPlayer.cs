@@ -510,6 +510,10 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
             if (allPlayers == null)
                 return;
 
+            // not lighthouse map, skip
+            if (Memory.Game == null || !Memory.Game.MapID.Equals("Lighthouse", StringComparison.OrdinalIgnoreCase))
+                return;
+
             foreach (var player in allPlayers)
             {
                 if (player is ObservedPlayer obs)
@@ -583,9 +587,9 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld.Player
                     playerBase,
                     addr => AllocateInternal(addr));
             }
-            catch (Exception ex)
+            catch
             {
-                DebugLogger.LogDebug($"ERROR during Player Allocation for player @ 0x{playerBase.ToString("X")}: {ex}");
+                // silently skip
             }
         }
 

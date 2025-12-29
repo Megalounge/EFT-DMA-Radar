@@ -787,7 +787,7 @@ namespace LoneEftDmaRadar.UI.ESP
                 return;
 
             // Check if this is AI or player
-            bool isAI = player.Type is PlayerType.AIScav or PlayerType.AIRaider or PlayerType.AIBoss or PlayerType.PScav;
+            bool isAI = player.Type is PlayerType.AIScav or PlayerType.AIRaider or PlayerType.AIBoss or PlayerType.AIGuard or PlayerType.PScav;
 
             // Optimization: Skip players/AI that are too far before W2S
             float distance = Vector3.Distance(localPlayer.Position, player.Position);
@@ -1471,6 +1471,7 @@ namespace LoneEftDmaRadar.UI.ESP
             {
                 PlayerType.AIScav => SKPaints.PaintAimviewWidgetScav,
                 PlayerType.AIRaider => SKPaints.PaintAimviewWidgetRaider,
+                PlayerType.AIGuard => SKPaints.PaintAimviewWidgetRaider,
                 PlayerType.AIBoss => SKPaints.PaintAimviewWidgetBoss,
                 PlayerType.PScav => SKPaints.PaintAimviewWidgetPScav,
                 _ => SKPaints.PaintAimviewWidgetPMC
@@ -1717,6 +1718,7 @@ namespace LoneEftDmaRadar.UI.ESP
                 {
                     PlayerType.AIBoss => cfg.EspColorBosses,
                     PlayerType.AIRaider => cfg.EspColorRaiders,
+                    PlayerType.AIGuard => cfg.EspColorRaiders,
                     _ => cfg.EspColorAI
                 };
 

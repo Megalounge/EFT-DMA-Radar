@@ -36,6 +36,7 @@ using LoneEftDmaRadar.Tarkov.GameWorld.Player;
 using LoneEftDmaRadar.Tarkov.GameWorld.Quests;
 using LoneEftDmaRadar.Tarkov.Unity.Structures;
 using LoneEftDmaRadar.UI.Misc;
+using VmmSharpEx.Extensions;
 using VmmSharpEx.Options;
 
 namespace LoneEftDmaRadar.Tarkov.GameWorld
@@ -225,7 +226,7 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld
                 ThrowIfRaidEnded();
                 if ((MapID.Equals("tarkovstreets", StringComparison.OrdinalIgnoreCase) ||
                     MapID.Equals("woods", StringComparison.OrdinalIgnoreCase)) &&
-                    Tarkov.GameWorld.Camera.CameraManager.IsInitialized)
+                    RaidStarted)
                     TryAllocateBTR();
                 _rgtPlayers.Refresh(); // Check for new players, add to list, etc.
             }
@@ -378,23 +379,21 @@ namespace LoneEftDmaRadar.Tarkov.GameWorld
 
             try
             {
-                // Check if Hands controller has a valid class name
+                // Check if Hands controller pointer is valid AND has a valid class name
                 // When raid starts, hands transitions from "ClientEmptyHandsController" to the actual item
-                if (localPlayer.HandsController != 0)
+                if (localPlayer.HandsController is ulong hands && hands.IsValidUserVA())
                 {
-                    var handsTypeName = Unity.Structures.ObjectClass.ReadName(localPlayer.HandsController);
-                    bool hasEquippedHands = !string.IsNullOrWhiteSpace(handsTypeName) &&
-                                           handsTypeName != "ClientEmptyHandsController";
+                    var handsTypeName = Unity.Structures.ObjectClass.ReadName(hands);
+                    RaidStarted = !string.IsNullOrWhiteSpace(handsTypeName) && handsTypeName != "ClientEmptyHandsController";
 
-                    if (hasEquippedHands)
-                    {
-                        RaidStarted = true;
-                        DebugLogger.LogDebug("[PreRaidStartChecks] Raid has started (hands equipped)!");
-                    }
-                    else if (!localPlayer.IsScav)
+                    if (!RaidStarted && !localPlayer.IsScav)
                     {
                         // Pre-raid window: detect teams while hands are still empty
                         AbstractPlayer.DetectTeamsPreRaid(localPlayer, _rgtPlayers);
+                    }
+                    else
+                    {
+                        DebugLogger.LogDebug("[PreRaidStartChecks] Raid has started!");
                     }
                 }
             }
